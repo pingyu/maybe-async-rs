@@ -357,12 +357,20 @@ pub fn maybe_async(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let mut item = parse_macro_input!(input as Item);
 
-    let token = if cfg!(feature = "is_sync") {
+    let mut sync_token = if cfg!(feature = "is_sync") {
         convert_sync(&mut item)
     } else {
-        convert_async(&mut item, send)
+        Default::default()
     };
-    token.into()
+
+    let async_token = if cfg!(feature = "is_async") {
+        convert_async(&mut item, send)
+    } else {
+        Default::default()
+    };
+
+    sync_token.extend(async_token);
+    sync_token.into()
 }
 
 /// convert marked async code to async code with `async-trait`

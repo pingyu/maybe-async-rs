@@ -42,3 +42,4 @@ async-trait = "0.1"
 [features]
 default = [ ]
 is_sync = [ ]
+is_async = [ ]

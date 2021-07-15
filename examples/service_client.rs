@@ -64,12 +64,22 @@ impl ServiceClient {
 }
 
 #[maybe_async::sync_impl]
-fn main() {
+fn run() {
+    println!("sync impl running");
     let _ = ServiceClient::create_bucket("bucket".to_owned());
 }
 
 #[maybe_async::async_impl]
+async fn run() {
+    println!("async impl running");
+    let _ = ServiceClient::create_bucket("bucket".to_owned()).await;
+}
+
 #[tokio::main]
 async fn main() {
-    let _ = ServiceClient::create_bucket("bucket".to_owned()).await;
+    #[cfg(feature = "is_sync")]
+    impl_sync::run();
+
+    #[cfg(feature = "is_async")]
+    impl_async::run().await;
 }
