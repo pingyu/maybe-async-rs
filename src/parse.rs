@@ -4,6 +4,7 @@ use syn::{
     Attribute, Error, ItemFn, ItemImpl, ItemTrait, Token,
 };
 
+#[derive(Clone)]
 pub enum Item {
     Trait(ItemTrait),
     Impl(ItemImpl),

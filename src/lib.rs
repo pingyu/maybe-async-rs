@@ -358,6 +358,7 @@ pub fn maybe_async(args: TokenStream, input: TokenStream) -> TokenStream {
     let mut item = parse_macro_input!(input as Item);
 
     let mut sync_token = if cfg!(feature = "is_sync") {
+        let mut item = item.clone();
         convert_sync(&mut item)
     } else {
         Default::default()
