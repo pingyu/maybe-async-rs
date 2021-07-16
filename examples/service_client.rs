@@ -78,8 +78,8 @@ async fn run() {
 #[tokio::main]
 async fn main() {
     #[cfg(feature = "is_sync")]
-    impl_sync::run();
+    run_sync();
 
     #[cfg(feature = "is_async")]
-    impl_async::run().await;
+    run_async().await;
 }

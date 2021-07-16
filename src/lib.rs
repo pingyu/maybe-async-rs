@@ -275,6 +275,10 @@
 //! # License
 //! MIT
 
+// TODO: in `impl` blocks, replace `Self` and `StructName` with
+// `StructNameSync`/`StructNameAsync`. Otherwise one gets the error "multiple
+// `method_name` found".
+
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
@@ -282,6 +286,7 @@ use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use syn::{
     parse_macro_input, spanned::Spanned, AttributeArgs, ImplItem, Lit, Meta, NestedMeta, TraitItem,
+    Ident, ItemImpl, Path
 };
 
 use quote::quote;
@@ -291,26 +296,48 @@ use crate::{parse::Item, visit::AsyncAwaitRemoval};
 mod parse;
 mod visit;
 
-fn convert_async(input: &mut Item, send: bool) -> TokenStream2 {
-    if send {
-        match input {
-            Item::Impl(item) => quote!(#[async_trait::async_trait]#item),
-            Item::Trait(item) => quote!(#[async_trait::async_trait]#item),
-            Item::Fn(item) => quote!(#item),
+fn ident_add_suffix(ident: &Ident, suffix: &str) -> Ident {
+    // TODO: not sure if ident.span() is the way to go
+    Ident::new(&format!("{}{}", ident, suffix), ident.span())
+}
+
+// Appends a suffix to the last segment in the impl's path
+fn impl_add_suffix(input: &mut ItemImpl, suffix: &str) {
+    if let ItemImpl { trait_: Some((_, Path { segments, .. }, _)), .. } = input {
+        if let Some(last) = segments.last_mut() {
+            last.ident = ident_add_suffix(&last.ident, suffix);
         }
-    } else {
-        match input {
-            Item::Impl(item) => quote!(#[async_trait::async_trait(?Send)]#item),
-            Item::Trait(item) => quote!(#[async_trait::async_trait(?Send)]#item),
-            Item::Fn(item) => quote!(#item),
-        }
+    }
+}
+
+fn convert_async(mut input: Item, send: bool) -> TokenStream2 {
+    let prefix = match (send, &input) {
+        (true, Item::Impl(_) | Item::Trait(_)) => quote!(#[async_trait::async_trait]),
+        (false, Item::Impl(_) | Item::Trait(_)) => quote!(#[async_trait::async_trait(?Send)]),
+        _ => quote!(),
+    };
+
+    match &mut input {
+        Item::Impl(item) => {
+            impl_add_suffix(item, "Async");
+            quote!(#prefix #item)
+        },
+        Item::Trait(item) => {
+            item.ident = ident_add_suffix(&item.ident, "Async");
+            quote!(#prefix #item)
+        },
+        Item::Fn(item) => {
+            item.sig.ident = ident_add_suffix(&item.sig.ident, "_async");
+            quote!(#item)
+        },
     }
     .into()
 }
 
-fn convert_sync(input: &mut Item) -> TokenStream2 {
-    match input {
+fn convert_sync(mut input: Item) -> TokenStream2 {
+    match &mut input {
         Item::Impl(item) => {
+            impl_add_suffix(item, "Sync");
             for inner in &mut item.items {
                 if let ImplItem::Method(ref mut method) = inner {
                     if method.sig.asyncness.is_some() {
@@ -321,6 +348,7 @@ fn convert_sync(input: &mut Item) -> TokenStream2 {
             AsyncAwaitRemoval.remove_async_await(quote!(#item))
         }
         Item::Trait(item) => {
+            item.ident = ident_add_suffix(&item.ident, "Sync");
             for inner in &mut item.items {
                 if let TraitItem::Method(ref mut method) = inner {
                     if method.sig.asyncness.is_some() {
@@ -331,6 +359,7 @@ fn convert_sync(input: &mut Item) -> TokenStream2 {
             AsyncAwaitRemoval.remove_async_await(quote!(#item))
         }
         Item::Fn(item) => {
+            item.sig.ident = ident_add_suffix(&item.sig.ident, "_sync");
             if item.sig.asyncness.is_some() {
                 item.sig.asyncness = None;
             }
@@ -355,17 +384,16 @@ pub fn maybe_async(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     };
 
-    let mut item = parse_macro_input!(input as Item);
+    let item = parse_macro_input!(input as Item);
 
     let mut sync_token = if cfg!(feature = "is_sync") {
-        let mut item = item.clone();
-        convert_sync(&mut item)
+        convert_sync(item.clone())
     } else {
         Default::default()
     };
 
     let async_token = if cfg!(feature = "is_async") {
-        convert_async(&mut item, send)
+        convert_async(item, send)
     } else {
         Default::default()
     };
@@ -386,15 +414,15 @@ pub fn must_be_async(args: TokenStream, input: TokenStream) -> TokenStream {
                 .into();
         }
     };
-    let mut item = parse_macro_input!(input as Item);
-    convert_async(&mut item, send).into()
+    let item = parse_macro_input!(input as Item);
+    convert_async(item, send).into()
 }
 
 /// convert marked async code to sync code
 #[proc_macro_attribute]
 pub fn must_be_sync(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let mut item = parse_macro_input!(input as Item);
-    convert_sync(&mut item).into()
+    let item = parse_macro_input!(input as Item);
+    convert_sync(item).into()
 }
 
 /// mark sync implementation
@@ -403,8 +431,9 @@ pub fn must_be_sync(_args: TokenStream, input: TokenStream) -> TokenStream {
 /// When `is_sync` is not set, marked code is removed.
 #[proc_macro_attribute]
 pub fn sync_impl(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let input = TokenStream2::from(input);
     let token = if cfg!(feature = "is_sync") {
+        let item = parse_macro_input!(input as Item);
+        let input = convert_sync(item);
         quote!(#input)
     } else {
         quote!()
@@ -417,7 +446,7 @@ pub fn sync_impl(_args: TokenStream, input: TokenStream) -> TokenStream {
 /// only compiled when `is_sync` feature gate is not set.
 /// When `is_sync` is set, marked code is removed.
 #[proc_macro_attribute]
-pub fn async_impl(args: TokenStream, _input: TokenStream) -> TokenStream {
+pub fn async_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     let send = match args.to_string().replace(" ", "").as_str() {
         "" | "Send" => true,
         "?Send" => false,
@@ -428,11 +457,11 @@ pub fn async_impl(args: TokenStream, _input: TokenStream) -> TokenStream {
         }
     };
 
-    let token = if cfg!(feature = "is_sync") {
-        quote!()
+    let token = if cfg!(feature = "is_async") {
+        let item = parse_macro_input!(input as Item);
+        convert_async(item, send)
     } else {
-        let mut item = parse_macro_input!(_input as Item);
-        convert_async(&mut item, send)
+        quote!()
     };
     token.into()
 }
