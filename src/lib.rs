@@ -275,10 +275,6 @@
 //! # License
 //! MIT
 
-// TODO: in `impl` blocks, replace `Self` and `StructName` with
-// `StructNameSync`/`StructNameAsync`. Otherwise one gets the error "multiple
-// `method_name` found".
-
 extern crate proc_macro;
 
 use proc_macro::TokenStream;

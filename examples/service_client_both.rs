@@ -1,3 +1,5 @@
+//! Expanded version of `service_client.rs` for both sync and async features.
+
 #![allow(dead_code, unused_variables)]
 /// To use `maybe-async`, we must know which block of codes is only used on
 /// blocking implementation, and which on async. These two implementation should
@@ -9,8 +11,19 @@ type Method = String;
 
 /// InnerClient are used to actually send request,
 /// which differ a lot between sync and async.
-#[maybe_async::maybe_async]
-trait InnerClient {
+trait InnerClientSync {
+    fn request(method: Method, url: Url, data: String) -> Response;
+    #[inline]
+    fn post(url: Url, data: String) -> Response {
+        Self::request(String::from("post"), url, data)
+    }
+    #[inline]
+    fn delete(url: Url, data: String) -> Response {
+        Self::request(String::from("delete"), url, data)
+    }
+}
+#[async_trait::async_trait]
+trait InnerClientAsync {
     async fn request(method: Method, url: Url, data: String) -> Response;
     #[inline]
     async fn post(url: Url, data: String) -> Response {
@@ -28,8 +41,7 @@ pub struct ServiceClient;
 /// Synchronous  implementation, only compiles when `is_sync` feature is off.
 /// Else the compiler will complain that *request is defined multiple times* and
 /// blabla.
-#[maybe_async::sync_impl]
-impl InnerClient for ServiceClient {
+impl InnerClientSync for ServiceClient {
     fn request(method: Method, url: Url, data: String) -> Response {
         // your implementation for sync, like use
         // `reqwest::blocking` to send request
@@ -38,8 +50,8 @@ impl InnerClient for ServiceClient {
 }
 
 /// Asynchronous implementation, only compiles when `is_sync` feature is off.
-#[maybe_async::async_impl]
-impl InnerClient for ServiceClient {
+#[async_trait::async_trait]
+impl InnerClientAsync for ServiceClient {
     async fn request(method: Method, url: Url, data: String) -> Response {
         // your implementation for async, like use `reqwest::client`
         // or `async_std` to send request
@@ -50,15 +62,21 @@ impl InnerClient for ServiceClient {
 /// Code of upstream API are almost the same for sync and async,
 /// except for async/await keyword.
 impl ServiceClient {
-    #[maybe_async::maybe_async]
-    async fn create_bucket(name: String) -> Response {
+    fn create_bucket_sync(name: String) -> Response {
+        Self::post("http://correct_url4create", String::from("my_bucket"))
+        // When `is_sync` is toggle on, this block will compiles to:
+        // Self::post("http://correct_url4create", String::from("my_bucket"))
+    }
+    async fn create_bucket_async(name: String) -> Response {
         Self::post("http://correct_url4create", String::from("my_bucket")).await
         // When `is_sync` is toggle on, this block will compiles to:
         // Self::post("http://correct_url4create", String::from("my_bucket"))
     }
 
-    #[maybe_async::maybe_async]
-    async fn delete_bucket(name: String) -> Response {
+    fn delete_bucket_sync(name: String) -> Response {
+        Self::delete("http://correct_url4delete", String::from("my_bucket"))
+    }
+    async fn delete_bucket_async(name: String) -> Response {
         Self::delete("http://correct_url4delete", String::from("my_bucket")).await
     }
     // and another thousands of functions that interact with service side
