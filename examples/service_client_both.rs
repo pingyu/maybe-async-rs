@@ -86,23 +86,18 @@ impl ServiceClientAsync {
     // and another thousands of functions that interact with service side
 }
 
-#[maybe_async::sync_impl]
-fn run() {
+fn run_sync() {
     println!("sync impl running");
     let _ = ServiceClientSync::create_bucket("bucket".to_owned());
 }
 
-#[maybe_async::async_impl]
-async fn run() {
+async fn run_async() {
     println!("async impl running");
     let _ = ServiceClientAsync::create_bucket("bucket".to_owned()).await;
 }
 
 #[tokio::main]
 async fn main() {
-    #[cfg(feature = "is_sync")]
     run_sync();
-
-    #[cfg(feature = "is_async")]
     run_async().await;
 }
