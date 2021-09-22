@@ -281,8 +281,8 @@ use proc_macro::TokenStream;
 
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use syn::{
-    parse_macro_input, spanned::Spanned, AttributeArgs, ImplItem, Lit, Meta, NestedMeta, TraitItem,
-    Ident, ItemImpl, Path
+    parse_macro_input, spanned::Spanned, AttributeArgs, Ident, ImplItem, ItemImpl, Lit, Meta,
+    NestedMeta, Path, TraitItem, Type, TypePath,
 };
 
 use quote::quote;
@@ -299,11 +299,22 @@ fn ident_add_suffix(ident: &Ident, suffix: &str) -> Ident {
 
 // Appends a suffix to the last segment in the impl's path
 fn impl_add_suffix(input: &mut ItemImpl, suffix: &str) {
-    if let ItemImpl { trait_: Some((_, Path { segments, .. }, _)), .. } = input {
+    if let Type::Path(TypePath {
+        path: Path { segments, .. },
+        ..
+    }) = &mut *input.self_ty
+    {
         if let Some(last) = segments.last_mut() {
             last.ident = ident_add_suffix(&last.ident, suffix);
         }
     }
+
+    // TODO: Only `impl X` blocks are supported for now, not with traits
+    // if let Some((_, Path { segments, .. }, _)) = &mut input.trait_ {
+    //     if let Some(last) = segments.last_mut() {
+    //         last.ident = ident_add_suffix(&last.ident, suffix);
+    //     }
+    // }
 }
 
 fn convert_async(mut input: Item, send: bool) -> TokenStream2 {
@@ -316,16 +327,28 @@ fn convert_async(mut input: Item, send: bool) -> TokenStream2 {
     match &mut input {
         Item::Impl(item) => {
             impl_add_suffix(item, "Async");
-            quote!(#prefix #item)
-        },
+            if item.trait_.is_none() {
+                quote!(#item)
+            } else {
+                quote!(#prefix #item)
+            }
+        }
+        Item::Struct(item) => {
+            item.ident = ident_add_suffix(&item.ident, "Async");
+            quote!(#item)
+        }
+        Item::Enum(item) => {
+            item.ident = ident_add_suffix(&item.ident, "Async");
+            quote!(#item)
+        }
         Item::Trait(item) => {
             item.ident = ident_add_suffix(&item.ident, "Async");
             quote!(#prefix #item)
-        },
+        }
         Item::Fn(item) => {
             item.sig.ident = ident_add_suffix(&item.sig.ident, "_async");
             quote!(#item)
-        },
+        }
     }
     .into()
 }
@@ -342,6 +365,14 @@ fn convert_sync(mut input: Item) -> TokenStream2 {
                 }
             }
             AsyncAwaitRemoval.remove_async_await(quote!(#item))
+        }
+        Item::Struct(item) => {
+            item.ident = ident_add_suffix(&item.ident, "Sync");
+            quote!(#item)
+        }
+        Item::Enum(item) => {
+            item.ident = ident_add_suffix(&item.ident, "Sync");
+            quote!(#item)
         }
         Item::Trait(item) => {
             item.ident = ident_add_suffix(&item.ident, "Sync");
@@ -365,11 +396,11 @@ fn convert_sync(mut input: Item) -> TokenStream2 {
     .into()
 }
 
-/// maybe_async attribute macro
+/// `maybe_async::both` attribute macro
 ///
-/// Can be applied to trait item, trait impl, functions and struct impls.
+/// Can be applied to traits, trait impls, structs, struct impls and functions.
 #[proc_macro_attribute]
-pub fn maybe_async(args: TokenStream, input: TokenStream) -> TokenStream {
+pub fn both(args: TokenStream, input: TokenStream) -> TokenStream {
     let send = match args.to_string().replace(" ", "").as_str() {
         "" | "Send" => true,
         "?Send" => false,
@@ -382,20 +413,18 @@ pub fn maybe_async(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let item = parse_macro_input!(input as Item);
 
-    let mut sync_token = if cfg!(feature = "is_sync") {
-        convert_sync(item.clone())
-    } else {
-        Default::default()
-    };
+    let mut token = TokenStream2::new();
 
-    let async_token = if cfg!(feature = "is_async") {
-        convert_async(item, send)
-    } else {
-        Default::default()
-    };
-
-    sync_token.extend(async_token);
-    sync_token.into()
+    if cfg!(all(feature = "is_sync", feature = "is_async")) {
+        // We need a `clone` if both are enabled
+        token.extend(convert_sync(item.clone()));
+        token.extend(convert_async(item, send));
+    } else if cfg!(feature = "is_sync") {
+        token.extend(convert_sync(item));
+    } else if cfg!(feature = "is_async") {
+        token.extend(convert_async(item, send));
+    }
+    token.into()
 }
 
 /// convert marked async code to async code with `async-trait`

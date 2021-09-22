@@ -34,8 +34,8 @@ trait InnerClient {
 #[maybe_async::both]
 pub struct ServiceClient;
 
-/// Synchronous  implementation, only compiles when `is_sync` feature is on.
-#[maybe_async::sync_impl]
+/// Synchronous  implementation.
+#[cfg(feature = "is_sync")]
 impl InnerClientSync for ServiceClientSync {
     fn request(method: Method, url: Url, data: String) -> Response {
         // your implementation for sync, like use `reqwest::blocking` to send
@@ -44,8 +44,9 @@ impl InnerClientSync for ServiceClientSync {
     }
 }
 
-/// Asynchronous implementation, only compiles when `is_async` feature is on.
-#[maybe_async::async_impl]
+/// Asynchronous implementation only.
+#[cfg(feature = "is_async")]
+#[async_trait::async_trait]
 impl InnerClientAsync for ServiceClientAsync {
     async fn request(method: Method, url: Url, data: String) -> Response {
         // your implementation for async, like use `reqwest::client` or
@@ -55,7 +56,8 @@ impl InnerClientAsync for ServiceClientAsync {
 }
 
 /// Code of upstream API are almost the same for sync and async, except for
-/// async/await keyword.
+/// async/await keyword. This will generate the same `impl` but for both
+/// `ServiceClientAsync` and `ServiceClientSync`.
 #[maybe_async::both]
 impl ServiceClient {
     async fn create_bucket(name: String) -> Response {
@@ -70,15 +72,15 @@ impl ServiceClient {
     // and another thousands of functions that interact with service side
 }
 
-#[maybe_async::sync_impl]
+#[cfg(feature = "is_sync")]
 fn run_sync() {
-    println!("{}: sync impl running", ServiceClientSync::get_name());
+    println!("sync impl running");
     let _ = ServiceClientSync::create_bucket("bucket".to_owned());
 }
 
-#[maybe_async::async_impl]
+#[cfg(feature = "is_async")]
 async fn run_async() {
-    println!("{}: async impl running", ServiceClientAsync::get_name());
+    println!("async impl running");
     let _ = ServiceClientAsync::create_bucket("bucket".to_owned()).await;
 }
 

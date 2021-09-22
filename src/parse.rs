@@ -1,12 +1,13 @@
-use proc_macro2::Span;
 use syn::{
     parse::{Parse, ParseStream, Result},
-    Attribute, Error, ItemFn, ItemImpl, ItemTrait, Token,
+    Attribute, ItemEnum, ItemFn, ItemImpl, ItemStruct, ItemTrait, Token,
 };
 
 #[derive(Clone)]
 pub enum Item {
     Trait(ItemTrait),
+    Struct(ItemStruct),
+    Enum(ItemEnum),
     Impl(ItemImpl),
     Fn(ItemFn),
 }
@@ -21,15 +22,14 @@ impl Parse for Item {
         }
         if lookahead.peek(Token![impl]) {
             let mut item: ItemImpl = input.parse()?;
-            if item.trait_.is_none() {
-                return Err(Error::new(Span::call_site(), "expected a trait impl"));
-            }
             item.attrs = attrs;
             Ok(Item::Impl(item))
         } else if lookahead.peek(Token![pub])
             || lookahead.peek(Token![trait])
             || lookahead.peek(Token![fn])
             || lookahead.peek(Token![async])
+            || lookahead.peek(Token![enum])
+            || lookahead.peek(Token![struct])
         {
             if lookahead.peek(Token![pub]) {
                 let ahead = input.fork();
@@ -40,6 +40,14 @@ impl Parse for Item {
                 let mut item: ItemTrait = input.parse()?;
                 item.attrs = attrs;
                 Ok(Item::Trait(item))
+            } else if lookahead.peek(Token![enum]) {
+                let mut item: ItemEnum = input.parse()?;
+                item.attrs = attrs;
+                Ok(Item::Enum(item))
+            } else if lookahead.peek(Token![struct]) {
+                let mut item: ItemStruct = input.parse()?;
+                item.attrs = attrs;
+                Ok(Item::Struct(item))
             } else {
                 let mut item: ItemFn = input.parse()?;
                 item.attrs = attrs;
