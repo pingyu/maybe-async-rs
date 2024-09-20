@@ -288,6 +288,7 @@ use syn::{
 use quote::quote;
 
 use crate::{parse::Item, visit::AsyncAwaitRemoval};
+use crate::visit::AsyncIdentAdder;
 
 mod parse;
 mod visit;
@@ -354,7 +355,7 @@ fn convert_async(mut input: Item, send: bool) -> TokenStream2 {
         }
         Item::Fn(item) => {
             item.sig.ident = ident_add_suffix(&item.sig.ident, "_async");
-            quote!(#item)
+            AsyncIdentAdder.add_async_ident(quote!(#item))
         }
     }
     .into()

@@ -1,6 +1,6 @@
 use std::iter::FromIterator;
 
-use crate::ident_try_remove_suffix;
+use crate::{ident_add_suffix, ident_try_remove_suffix};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
@@ -205,4 +205,35 @@ fn search_trait_bound(
         }
     }
     inputs
+}
+
+pub struct AsyncIdentAdder;
+
+impl AsyncIdentAdder {
+    pub fn add_async_ident(&mut self, item: TokenStream) -> TokenStream {
+        let mut syntax_tree: File = syn::parse(item.into()).unwrap();
+        self.visit_file_mut(&mut syntax_tree);
+        quote!(#syntax_tree)
+    }
+}
+
+impl VisitMut for AsyncIdentAdder {
+    fn visit_expr_mut(&mut self, node: &mut Expr) {
+        // Delegate to the default impl to visit nested expressions.
+        visit_mut::visit_expr_mut(self, node);
+
+        match node {
+            Expr::Await(expr) => {
+                if let Expr::MethodCall(base_expr) = expr.base.as_ref() {
+                    if !base_expr.method.to_string().ends_with("_async") {
+                        let mut base_expr = base_expr.clone();
+                        base_expr.method = ident_add_suffix(&base_expr.method, "_async");
+                        expr.base = Box::new(Expr::MethodCall(base_expr));
+                    }
+                }
+            },
+
+            _ => {}
+        }
+    }
 }
