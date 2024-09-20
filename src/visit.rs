@@ -129,6 +129,11 @@ impl VisitMut for AsyncAwaitRemoval {
                 };
                 *node = sync_expr;
             }
+
+            Expr::MethodCall(expr) => {
+                expr.method = ident_remove_suffix(&expr.method, "_async");
+            }
+
             _ => {}
         }
     }
