@@ -383,16 +383,15 @@ fn convert_sync(mut input: Item) -> TokenStream2 {
             quote!(#item)
         }
         Item::Trait(item) => {
-            // item.ident = ident_add_suffix(&item.ident, "Sync");
-            // for inner in &mut item.items {
-            //     if let TraitItem::Method(ref mut method) = inner {
-            //         if method.sig.asyncness.is_some() {
-            //             method.sig.asyncness = None;
-            //         }
-            //     }
-            // }
-            // AsyncAwaitRemoval.remove_async_await(quote!(#item))
-            quote!()
+            item.ident = ident_add_suffix(&item.ident, "Sync");
+            for inner in &mut item.items {
+                if let TraitItem::Method(ref mut method) = inner {
+                    if method.sig.asyncness.is_some() {
+                        method.sig.asyncness = None;
+                    }
+                }
+            }
+            AsyncAwaitRemoval.remove_async_await(quote!(#item))
         }
         Item::Fn(item) => {
             // item.sig.ident = ident_add_suffix(&item.sig.ident, "_sync");
@@ -437,6 +436,17 @@ pub fn both(args: TokenStream, input: TokenStream) -> TokenStream {
         token.extend(convert_async(item, send));
     }
     token.into()
+}
+
+#[proc_macro_attribute]
+pub fn async_trait(_args: TokenStream, input: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(input as Item);
+    match item {
+        Item::Trait(item) => {
+            quote!(#[async_trait::async_trait] #item)
+        }
+        _ => quote!()
+    }.into()
 }
 
 /// convert marked async code to async code with `async-trait`
