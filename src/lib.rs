@@ -297,6 +297,15 @@ fn ident_add_suffix(ident: &Ident, suffix: &str) -> Ident {
     Ident::new(&format!("{}{}", ident, suffix), ident.span())
 }
 
+fn ident_remove_suffix(ident: &Ident, suffix: &str) -> Ident {
+    let ident_str = ident.to_string();
+    if ident_str.ends_with(suffix) {
+        Ident::new(&ident_str[..ident_str.len() - suffix.len()], ident.span())
+    } else {
+        ident.clone()
+    }
+}
+
 // Appends a suffix to the last segment in the impl's path
 fn impl_add_suffix(input: &mut ItemImpl, suffix: &str) {
     if let Type::Path(TypePath {
@@ -386,7 +395,8 @@ fn convert_sync(mut input: Item) -> TokenStream2 {
             AsyncAwaitRemoval.remove_async_await(quote!(#item))
         }
         Item::Fn(item) => {
-            item.sig.ident = ident_add_suffix(&item.sig.ident, "_sync");
+            // item.sig.ident = ident_add_suffix(&item.sig.ident, "_sync");
+            item.sig.ident = ident_remove_suffix(&item.sig.ident, "_async");
             if item.sig.asyncness.is_some() {
                 item.sig.asyncness = None;
             }

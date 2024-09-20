@@ -9,6 +9,7 @@ use syn::{
     Expr, ExprBlock, File, GenericArgument, GenericParam, Item, PathArguments, PathSegment, Type,
     TypeParamBound, WherePredicate,
 };
+use crate::ident_remove_suffix;
 
 pub struct ReplaceGenericType<'a> {
     generic_type: &'a str,
@@ -136,6 +137,8 @@ impl VisitMut for AsyncAwaitRemoval {
         // find generic parameter of Future and replace it with its Output type
         if let Item::Fn(item_fn) = i {
             let mut inputs: Vec<(String, PathSegment)> = vec![];
+
+            item_fn.sig.ident = ident_remove_suffix(&item_fn.sig.ident, "_async");
 
             // generic params: <T:Future<Output=()>, F>
             for param in &item_fn.sig.generics.params {
