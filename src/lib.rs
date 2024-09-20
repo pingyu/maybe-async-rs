@@ -287,8 +287,10 @@ use syn::{
 
 use quote::quote;
 
-use crate::{parse::Item, visit::AsyncAwaitRemoval};
-use crate::visit::AsyncIdentAdder;
+use crate::{
+    parse::Item,
+    visit::{AsyncAwaitRemoval, AsyncIdentAdder},
+};
 
 mod parse;
 mod visit;
@@ -445,8 +447,9 @@ pub fn async_trait(_args: TokenStream, input: TokenStream) -> TokenStream {
         Item::Trait(item) => {
             quote!(#[async_trait::async_trait] #item)
         }
-        _ => quote!()
-    }.into()
+        _ => quote!(),
+    }
+    .into()
 }
 
 /// convert marked async code to async code with `async-trait`

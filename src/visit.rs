@@ -223,14 +223,33 @@ impl VisitMut for AsyncIdentAdder {
         visit_mut::visit_expr_mut(self, node);
 
         match node {
-            Expr::Await(expr) => {
-                if let Expr::MethodCall(base_expr) = expr.base.as_ref() {
+            Expr::Await(expr) => match expr.base.as_ref() {
+                Expr::MethodCall(base_expr) => {
                     if !base_expr.method.to_string().ends_with("_async") {
                         let mut base_expr = base_expr.clone();
                         base_expr.method = ident_add_suffix(&base_expr.method, "_async");
                         expr.base = Box::new(Expr::MethodCall(base_expr));
                     }
                 }
+
+                Expr::Call(call_expr) => {
+                    if let Expr::Path(path_expr) = &*call_expr.func {
+                        let last_seg = path_expr.path.segments.last().unwrap();
+                        if !last_seg.ident.to_string().ends_with("_async") {
+                            let mut call_expr = call_expr.clone();
+                            let mut func_expr = call_expr.func.as_ref().clone();
+                            let Expr::Path(path_expr) = &mut func_expr else {
+                                unreachable!()
+                            };
+                            path_expr.path.segments.last_mut().unwrap().ident =
+                                ident_add_suffix(&last_seg.ident, "_async");
+                            call_expr.func = Box::new(func_expr);
+                            expr.base = Box::new(Expr::Call(call_expr));
+                        }
+                    }
+                }
+
+                _ => {}
             },
 
             _ => {}
