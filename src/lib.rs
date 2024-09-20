@@ -350,7 +350,7 @@ fn convert_async(mut input: Item, send: bool) -> TokenStream2 {
             quote!(#item)
         }
         Item::Trait(item) => {
-            item.ident = ident_add_suffix(&item.ident, "Async");
+            // item.ident = ident_add_suffix(&item.ident, "Async");
             quote!(#prefix #item)
         }
         Item::Fn(item) => {
@@ -383,15 +383,16 @@ fn convert_sync(mut input: Item) -> TokenStream2 {
             quote!(#item)
         }
         Item::Trait(item) => {
-            item.ident = ident_add_suffix(&item.ident, "Sync");
-            for inner in &mut item.items {
-                if let TraitItem::Method(ref mut method) = inner {
-                    if method.sig.asyncness.is_some() {
-                        method.sig.asyncness = None;
-                    }
-                }
-            }
-            AsyncAwaitRemoval.remove_async_await(quote!(#item))
+            // item.ident = ident_add_suffix(&item.ident, "Sync");
+            // for inner in &mut item.items {
+            //     if let TraitItem::Method(ref mut method) = inner {
+            //         if method.sig.asyncness.is_some() {
+            //             method.sig.asyncness = None;
+            //         }
+            //     }
+            // }
+            // AsyncAwaitRemoval.remove_async_await(quote!(#item))
+            quote!()
         }
         Item::Fn(item) => {
             // item.sig.ident = ident_add_suffix(&item.sig.ident, "_sync");
