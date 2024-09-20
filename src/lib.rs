@@ -297,13 +297,11 @@ fn ident_add_suffix(ident: &Ident, suffix: &str) -> Ident {
     Ident::new(&format!("{}{}", ident, suffix), ident.span())
 }
 
-fn ident_remove_suffix(ident: &Ident, suffix: &str) -> Ident {
+fn ident_try_remove_suffix(ident: &Ident, suffix: &str) -> Option<Ident> {
     let ident_str = ident.to_string();
-    if ident_str.ends_with(suffix) {
-        Ident::new(&ident_str[..ident_str.len() - suffix.len()], ident.span())
-    } else {
-        ident.clone()
-    }
+    ident_str
+        .ends_with(suffix)
+        .then(|| Ident::new(&ident_str[..ident_str.len() - suffix.len()], ident.span()))
 }
 
 // Appends a suffix to the last segment in the impl's path
@@ -396,7 +394,9 @@ fn convert_sync(mut input: Item) -> TokenStream2 {
         }
         Item::Fn(item) => {
             // item.sig.ident = ident_add_suffix(&item.sig.ident, "_sync");
-            item.sig.ident = ident_remove_suffix(&item.sig.ident, "_async");
+            if let Some(new_ident) = ident_try_remove_suffix(&item.sig.ident, "_async") {
+                item.sig.ident = new_ident;
+            }
             if item.sig.asyncness.is_some() {
                 item.sig.asyncness = None;
             }
