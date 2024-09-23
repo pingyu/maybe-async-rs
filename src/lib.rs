@@ -440,18 +440,6 @@ pub fn both(args: TokenStream, input: TokenStream) -> TokenStream {
     token.into()
 }
 
-#[proc_macro_attribute]
-pub fn async_trait(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let item = parse_macro_input!(input as Item);
-    match item {
-        Item::Trait(item) => {
-            quote!(#[async_trait::async_trait] #item)
-        }
-        _ => quote!(),
-    }
-    .into()
-}
-
 /// convert marked async code to async code with `async-trait`
 #[proc_macro_attribute]
 pub fn must_be_async(args: TokenStream, input: TokenStream) -> TokenStream {
