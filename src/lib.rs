@@ -498,6 +498,67 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
                 quote!(#prefix #item)
             }
         }
+        Item::Trait(item) => {
+            let mut expanded_items = Vec::with_capacity(item.items.len());
+            for inner in item.items.drain(..) {
+                if let TraitItem::Method(mut method) = inner {
+                    if let Some(pos) = method
+                        .attrs
+                        .iter()
+                        .position(|attr| attr.path.is_ident("maybe_async"))
+                    {
+                        method.attrs.remove(pos);
+
+                        if cfg!(feature = "is_async") {
+                            let mut method = method.clone();
+                            let is_sync = method.sig.asyncness.is_none();
+                            if is_sync {
+                                method.sig.asyncness = Some(Default::default());
+                            }
+                            let method = if method.default.is_some() {
+                                method.sig.ident = ident_add_suffix(&method.sig.ident, "_async");
+                                let expanded = AsyncIdentAdder.add_async_ident(quote!(#method));
+                                parse_quote! { #expanded }
+                            } else if is_sync {
+                                // TODO: generate default implementation as invoke the sync version.
+                                method.default = Some(parse_quote! { unimplemented!() });
+                                method
+                            } else {
+                                method
+                            };
+                            expanded_items.push(TraitItem::Method(method));
+                        }
+
+                        if cfg!(feature = "is_sync") {
+                            if let Some(new_ident) =
+                                ident_try_remove_suffix(&method.sig.ident, "_async")
+                            {
+                                method.sig.ident = new_ident;
+                            }
+                            if method.sig.asyncness.is_some() {
+                                method.sig.asyncness = None;
+                            }
+                            let method = if method.default.is_some() {
+                                let expanded =
+                                    AsyncAwaitRemoval.remove_async_await(quote!(#method));
+                                parse_quote! { #expanded }
+                            } else {
+                                method
+                            };
+                            expanded_items.push(TraitItem::Method(method));
+                        }
+                    } else {
+                        expanded_items.push(TraitItem::Method(method));
+                    }
+                } else {
+                    expanded_items.push(inner);
+                }
+            }
+
+            item.items = expanded_items;
+
+            quote!(#prefix #item)
+        }
         _ => syn::Error::new(Span::call_site(), "Only accepts trait or trait impl")
             .to_compile_error()
             .into(),
