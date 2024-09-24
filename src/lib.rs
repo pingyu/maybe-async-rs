@@ -289,7 +289,7 @@ use crate::{
     parse::Item,
     visit::{AsyncAwaitRemoval, AsyncIdentAdder},
 };
-use quote::{quote, ToTokens};
+use quote::quote;
 
 mod parse;
 mod visit;
@@ -524,21 +524,10 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
                                 parse_quote! { #expanded }
                             } else if is_sync {
                                 // TODO: generate default implementation as invoke the sync version.
-                                let inputs = method
-                                    .sig
-                                    .inputs
-                                    .iter()
-                                    .filter_map(|arg| {
-                                        if let syn::FnArg::Typed(pat) = arg {
-                                            Some(pat.pat.to_token_stream())
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .collect::<Vec<_>>();
                                 method.default = Some(parse_quote! { {
-                                    self.#method.ident(#(#inputs),*)
+                                    unimplemented!()
                                 } });
+                                method.attrs.push(parse_quote!(#[allow(unused)]));
                                 method
                             } else {
                                 method
