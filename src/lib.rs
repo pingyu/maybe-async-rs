@@ -307,6 +307,7 @@ fn ident_try_remove_suffix(ident: &Ident, suffix: &str) -> Option<Ident> {
 }
 
 // Appends a suffix to the last segment in the impl's path
+#[allow(dead_code)]
 fn impl_add_suffix(input: &mut ItemImpl, suffix: &str) {
     if let Type::Path(TypePath {
         path: Path { segments, .. },
@@ -345,8 +346,8 @@ fn convert_async(mut input: Item, send: bool) -> TokenStream2 {
                     {
                         method.attrs.remove(pos);
                         method.sig.ident = ident_add_suffix(&method.sig.ident, "_async");
-                        let expended = AsyncIdentAdder.add_async_ident(quote!(#method));
-                        *method = parse_quote! { #expended };
+                        let expanded = AsyncIdentAdder.add_async_ident(quote!(#method));
+                        *method = parse_quote! { #expanded };
                     }
                 }
             }
@@ -380,11 +381,29 @@ fn convert_async(mut input: Item, send: bool) -> TokenStream2 {
 fn convert_sync(mut input: Item) -> TokenStream2 {
     match &mut input {
         Item::Impl(item) => {
-            impl_add_suffix(item, "Sync");
+            // impl_add_suffix(item, "Sync");
             for inner in &mut item.items {
                 if let ImplItem::Method(ref mut method) = inner {
-                    if method.sig.asyncness.is_some() {
-                        method.sig.asyncness = None;
+                    // if method.sig.asyncness.is_some() {
+                    //     method.sig.asyncness = None;
+                    // }
+                    if let Some(pos) = method
+                        .attrs
+                        .iter()
+                        .position(|attr| attr.path.is_ident("maybe_async"))
+                    {
+                        method.attrs.remove(pos);
+
+                        if let Some(new_ident) =
+                            ident_try_remove_suffix(&method.sig.ident, "_async")
+                        {
+                            method.sig.ident = new_ident;
+                        }
+                        if method.sig.asyncness.is_some() {
+                            method.sig.asyncness = None;
+                        }
+                        let expanded = AsyncAwaitRemoval.remove_async_await(quote!(#method));
+                        *method = parse_quote! { #expanded };
                     }
                 }
             }
