@@ -141,9 +141,9 @@
 //!
 //!     #[maybe_async::test(
 //!         feature="is_sync",
-//!         async(all(not(feature="is_sync"), feature="async_std"), async_std::test),
-//!         async(all(not(feature="is_sync"), feature="tokio"), tokio::test)
-//!     )]
+//!         async(all(not(feature="is_sync"), feature="async_std"),
+//! async_std::test),         async(all(not(feature="is_sync"),
+//! feature="tokio"), tokio::test)     )]
 //!     async fn test_async_fn() {
 //!         let res = async_fn().await;
 //!         assert_eq!(res, true);
@@ -281,16 +281,15 @@ use proc_macro::TokenStream;
 
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use syn::{
-    parse_macro_input, spanned::Spanned, AttributeArgs, Ident, ImplItem, ItemImpl, Lit, Meta,
-    NestedMeta, Path, TraitItem, Type, TypePath,
+    parse_macro_input, parse_quote, spanned::Spanned, AttributeArgs, Ident, ImplItem, ItemImpl,
+    Lit, Meta, NestedMeta, Path, TraitItem, Type, TypePath,
 };
-
-use quote::quote;
 
 use crate::{
     parse::Item,
     visit::{AsyncAwaitRemoval, AsyncIdentAdder},
 };
+use quote::quote;
 
 mod parse;
 mod visit;
@@ -336,7 +335,22 @@ fn convert_async(mut input: Item, send: bool) -> TokenStream2 {
 
     match &mut input {
         Item::Impl(item) => {
-            impl_add_suffix(item, "Async");
+            // impl_add_suffix(item, "Async");
+            for inner in &mut item.items {
+                if let ImplItem::Method(ref mut method) = inner {
+                    if let Some(pos) = method
+                        .attrs
+                        .iter()
+                        .position(|attr| attr.path.is_ident("maybe_async"))
+                    {
+                        method.attrs.remove(pos);
+                        method.sig.ident = ident_add_suffix(&method.sig.ident, "_async");
+                        let expended = AsyncIdentAdder.add_async_ident(quote!(#method));
+                        *method = parse_quote! { #expended };
+                    }
+                }
+            }
+
             if item.trait_.is_none() {
                 quote!(#item)
             } else {
@@ -344,11 +358,11 @@ fn convert_async(mut input: Item, send: bool) -> TokenStream2 {
             }
         }
         Item::Struct(item) => {
-            item.ident = ident_add_suffix(&item.ident, "Async");
+            // item.ident = ident_add_suffix(&item.ident, "Async");
             quote!(#item)
         }
         Item::Enum(item) => {
-            item.ident = ident_add_suffix(&item.ident, "Async");
+            // item.ident = ident_add_suffix(&item.ident, "Async");
             quote!(#item)
         }
         Item::Trait(item) => {
