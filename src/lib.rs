@@ -482,6 +482,8 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
                             let method = parse_quote! { #expanded };
                             expanded_items.push(ImplItem::Method(method));
                         }
+                    } else {
+                        expanded_items.push(ImplItem::Method(method));
                     }
                 } else {
                     expanded_items.push(inner);
