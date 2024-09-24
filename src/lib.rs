@@ -451,8 +451,9 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
 
     match &mut input {
         Item::Impl(item) => {
-            for inner in &mut item.items {
-                if let ImplItem::Method(ref mut method) = inner {
+            let mut expanded_items = Vec::with_capacity(item.items.len());
+            for inner in item.items.drain(..) {
+                if let ImplItem::Method(mut method) = inner {
                     if let Some(pos) = method
                         .attrs
                         .iter()
@@ -460,10 +461,15 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
                     {
                         method.attrs.remove(pos);
 
-                        let mut token = TokenStream2::new();
+                        if cfg!(feature = "is_async") {
+                            let mut method = method.clone();
+                            method.sig.ident = ident_add_suffix(&method.sig.ident, "_async");
+                            let expanded = AsyncIdentAdder.add_async_ident(quote!(#method));
+                            let method = parse_quote! { #expanded };
+                            expanded_items.push(ImplItem::Method(method));
+                        }
 
                         if cfg!(feature = "is_sync") {
-                            let mut method = method.clone();
                             if let Some(new_ident) =
                                 ident_try_remove_suffix(&method.sig.ident, "_async")
                             {
@@ -473,19 +479,16 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
                                 method.sig.asyncness = None;
                             }
                             let expanded = AsyncAwaitRemoval.remove_async_await(quote!(#method));
-                            token.extend(expanded);
+                            let method = parse_quote! { #expanded };
+                            expanded_items.push(ImplItem::Method(method));
                         }
-
-                        if cfg!(feature = "is_async") {
-                            method.sig.ident = ident_add_suffix(&method.sig.ident, "_async");
-                            let expanded = AsyncIdentAdder.add_async_ident(quote!(#method));
-                            token.extend(expanded);
-                        }
-
-                        *method = parse_quote! { #token };
                     }
+                } else {
+                    expanded_items.push(inner);
                 }
             }
+
+            item.items = expanded_items;
 
             if item.trait_.is_none() {
                 quote!(#item)
