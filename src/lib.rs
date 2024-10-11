@@ -327,11 +327,17 @@ fn impl_add_suffix(input: &mut ItemImpl, suffix: &str) {
     // }
 }
 
-fn convert_async(mut input: Item, send: bool) -> TokenStream2 {
+fn convert_async(mut input: Item, send: bool, recursion: bool) -> TokenStream2 {
     let prefix = match (send, &input) {
         (true, Item::Impl(_) | Item::Trait(_)) => quote!(#[async_trait::async_trait]),
         (false, Item::Impl(_) | Item::Trait(_)) => quote!(#[async_trait::async_trait(?Send)]),
         _ => quote!(),
+    };
+
+    let prefix_recursion = if recursion {
+        quote!(#[async_recursion::async_recursion])
+    } else {
+        quote!()
     };
 
     match &mut input {
@@ -347,7 +353,7 @@ fn convert_async(mut input: Item, send: bool) -> TokenStream2 {
                         method.attrs.remove(pos);
                         method.sig.ident = ident_add_suffix(&method.sig.ident, "_async");
                         let expanded = AsyncIdentAdder.add_async_ident(quote!(#method));
-                        *method = parse_quote! { #expanded };
+                        *method = parse_quote! { #prefix_recursion #expanded };
                     }
                 }
             }
@@ -372,7 +378,7 @@ fn convert_async(mut input: Item, send: bool) -> TokenStream2 {
         }
         Item::Fn(item) => {
             item.sig.ident = ident_add_suffix(&item.sig.ident, "_async");
-            AsyncIdentAdder.add_async_ident(quote!(#item))
+            AsyncIdentAdder.add_async_ident(quote!(#prefix_recursion #item))
         }
     }
     .into()
@@ -588,13 +594,17 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
 /// Can be applied to traits, trait impls, structs, struct impls and functions.
 #[proc_macro_attribute]
 pub fn both(args: TokenStream, input: TokenStream) -> TokenStream {
-    let send = match args.to_string().replace(" ", "").as_str() {
-        "" | "Send" => true,
-        "?Send" => false,
+    let (send, recursion) = match args.to_string().replace(" ", "").as_str() {
+        "" | "Send" => (true, false),
+        "?Send" => (false, false),
+        "Recursion" => (true, true),
         _ => {
-            return syn::Error::new(Span::call_site(), "Only accepts `Send` or `?Send`")
-                .to_compile_error()
-                .into();
+            return syn::Error::new(
+                Span::call_site(),
+                "Only accepts `Send`, `?Send`, or `Recursion`",
+            )
+            .to_compile_error()
+            .into();
         }
     };
 
@@ -605,11 +615,11 @@ pub fn both(args: TokenStream, input: TokenStream) -> TokenStream {
     if cfg!(all(feature = "is_sync", feature = "is_async")) {
         // We need a `clone` if both are enabled
         token.extend(convert_sync(item.clone()));
-        token.extend(convert_async(item, send));
+        token.extend(convert_async(item, send, recursion));
     } else if cfg!(feature = "is_sync") {
         token.extend(convert_sync(item));
     } else if cfg!(feature = "is_async") {
-        token.extend(convert_async(item, send));
+        token.extend(convert_async(item, send, recursion));
     }
     token.into()
 }
@@ -646,7 +656,7 @@ pub fn must_be_async(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     };
     let item = parse_macro_input!(input as Item);
-    convert_async(item, send).into()
+    convert_async(item, send, false).into()
 }
 
 /// convert marked async code to sync code
@@ -690,7 +700,7 @@ pub fn async_impl(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let token = if cfg!(feature = "is_async") {
         let item = parse_macro_input!(input as Item);
-        convert_async(item, send)
+        convert_async(item, send, false)
     } else {
         quote!()
     };
