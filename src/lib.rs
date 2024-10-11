@@ -454,18 +454,26 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
             let mut expanded_items = Vec::with_capacity(item.items.len());
             for inner in item.items.drain(..) {
                 if let ImplItem::Method(mut method) = inner {
-                    if let Some(pos) = method
-                        .attrs
-                        .iter()
-                        .position(|attr| attr.path.is_ident("maybe_async"))
-                    {
-                        method.attrs.remove(pos);
+                    if let Some(pos) = method.attrs.iter().position(|attr| {
+                        attr.path.is_ident("maybe_async")
+                            || attr.path.is_ident("maybe_async_recursion")
+                    }) {
+                        let is_recursion = method
+                            .attrs
+                            .remove(pos)
+                            .path
+                            .is_ident("maybe_async_recursion");
+                        let prefix = if is_recursion {
+                            quote!(#[async_recursion::async_recursion])
+                        } else {
+                            quote!()
+                        };
 
                         if cfg!(feature = "is_async") {
                             let mut method = method.clone();
                             method.sig.ident = ident_add_suffix(&method.sig.ident, "_async");
                             let expanded = AsyncIdentAdder.add_async_ident(quote!(#method));
-                            let method = parse_quote! { #expanded };
+                            let method = parse_quote! { #prefix #expanded };
                             expanded_items.push(ImplItem::Method(method));
                         }
 
