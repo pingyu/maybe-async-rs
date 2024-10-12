@@ -531,6 +531,7 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
                             } else if is_sync {
                                 // TODO: generate default implementation as invoke the sync version.
                                 method.default = Some(parse_quote!({
+                                    #[allow(clippy::diverging_sub_expression)]
                                     unimplemented!();
                                 }));
                                 method.attrs.push(parse_quote!(#[allow(unused)]));
