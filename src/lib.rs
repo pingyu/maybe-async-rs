@@ -594,6 +594,7 @@ pub fn both(args: TokenStream, input: TokenStream) -> TokenStream {
             "Send" => send = Some(true),
             "?Send" => send = Some(false),
             "Recursion" => recursion = true,
+            "" => {}
             _ => {
                 return syn::Error::new(
                     Span::call_site(),
