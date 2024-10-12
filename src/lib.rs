@@ -530,9 +530,9 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
                                 parse_quote! { #expanded }
                             } else if is_sync {
                                 // TODO: generate default implementation as invoke the sync version.
-                                method.default = Some(parse_quote! { {
-                                    unimplemented!()
-                                } });
+                                method.default = Some(parse_quote!({
+                                    unimplemented!();
+                                }));
                                 method.attrs.push(parse_quote!(#[allow(unused)]));
                                 method
                             } else {
