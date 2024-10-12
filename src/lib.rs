@@ -141,9 +141,9 @@
 //!
 //!     #[maybe_async::test(
 //!         feature="is_sync",
-//!         async(all(not(feature="is_sync"), feature="async_std"),
-//! async_std::test),         async(all(not(feature="is_sync"),
-//! feature="tokio"), tokio::test)     )]
+//!         async(all(not(feature="is_sync"), feature="async_std"), async_std::test),
+//!         async(all(not(feature="is_sync"), feature="tokio"), tokio::test)
+//!     )]
 //!     async fn test_async_fn() {
 //!         let res = async_fn().await;
 //!         assert_eq!(res, true);
@@ -342,7 +342,6 @@ fn convert_async(mut input: Item, send: bool, recursion: bool) -> TokenStream2 {
 
     match &mut input {
         Item::Impl(item) => {
-            // impl_add_suffix(item, "Async");
             for inner in &mut item.items {
                 if let ImplItem::Method(ref mut method) = inner {
                     if let Some(pos) = method
@@ -365,15 +364,12 @@ fn convert_async(mut input: Item, send: bool, recursion: bool) -> TokenStream2 {
             }
         }
         Item::Struct(item) => {
-            // item.ident = ident_add_suffix(&item.ident, "Async");
             quote!(#item)
         }
         Item::Enum(item) => {
-            // item.ident = ident_add_suffix(&item.ident, "Async");
             quote!(#item)
         }
         Item::Trait(item) => {
-            // item.ident = ident_add_suffix(&item.ident, "Async");
             quote!(#prefix #item)
         }
         Item::Fn(item) => {
@@ -387,12 +383,8 @@ fn convert_async(mut input: Item, send: bool, recursion: bool) -> TokenStream2 {
 fn convert_sync(mut input: Item) -> TokenStream2 {
     match &mut input {
         Item::Impl(item) => {
-            // impl_add_suffix(item, "Sync");
             for inner in &mut item.items {
                 if let ImplItem::Method(ref mut method) = inner {
-                    // if method.sig.asyncness.is_some() {
-                    //     method.sig.asyncness = None;
-                    // }
                     if let Some(pos) = method
                         .attrs
                         .iter()
@@ -435,7 +427,6 @@ fn convert_sync(mut input: Item) -> TokenStream2 {
             AsyncAwaitRemoval.remove_async_await(quote!(#item))
         }
         Item::Fn(item) => {
-            // item.sig.ident = ident_add_suffix(&item.sig.ident, "_sync");
             if let Some(new_ident) = ident_try_remove_suffix(&item.sig.ident, "_async") {
                 item.sig.ident = new_ident;
             }
@@ -469,7 +460,7 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
                             .remove(pos)
                             .path
                             .is_ident("maybe_async_recursion");
-                        let prefix = if is_recursion {
+                        let prefix_recursion = if is_recursion {
                             quote!(#[async_recursion::async_recursion])
                         } else {
                             quote!()
@@ -479,7 +470,7 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
                             let mut method = method.clone();
                             method.sig.ident = ident_add_suffix(&method.sig.ident, "_async");
                             let expanded = AsyncIdentAdder.add_async_ident(quote!(#method));
-                            let method = parse_quote! { #prefix #expanded };
+                            let method = parse_quote! { #prefix_recursion #expanded };
                             expanded_items.push(ImplItem::Method(method));
                         }
 
@@ -512,6 +503,7 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
                 quote!(#prefix #item)
             }
         }
+
         Item::Trait(item) => {
             let mut expanded_items = Vec::with_capacity(item.items.len());
             for inner in item.items.drain(..) {
@@ -583,6 +575,7 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
 
             quote!(#prefix #item)
         }
+
         _ => syn::Error::new(Span::call_site(), "Only accepts trait or trait impl")
             .to_compile_error()
             .into(),
@@ -594,19 +587,24 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
 /// Can be applied to traits, trait impls, structs, struct impls and functions.
 #[proc_macro_attribute]
 pub fn both(args: TokenStream, input: TokenStream) -> TokenStream {
-    let (send, recursion) = match args.to_string().replace(" ", "").as_str() {
-        "" | "Send" => (true, false),
-        "?Send" => (false, false),
-        "Recursion" => (true, true),
-        _ => {
-            return syn::Error::new(
-                Span::call_site(),
-                "Only accepts `Send`, `?Send`, or `Recursion`",
-            )
-            .to_compile_error()
-            .into();
+    let mut send = None;
+    let mut recursion = false;
+    for arg in args.to_string().replace(" ", "").split(',') {
+        match arg {
+            "Send" => send = Some(true),
+            "?Send" => send = Some(false),
+            "Recursion" => recursion = true,
+            _ => {
+                return syn::Error::new(
+                    Span::call_site(),
+                    "Only accepts `Send`, `?Send`, or `Recursion`",
+                )
+                .to_compile_error()
+                .into();
+            }
         }
-    };
+    }
+    let send = send.unwrap_or(true);
 
     let item = parse_macro_input!(input as Item);
 

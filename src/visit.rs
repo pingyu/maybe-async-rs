@@ -131,7 +131,7 @@ impl VisitMut for AsyncAwaitRemoval {
             }
 
             Expr::MethodCall(expr) => {
-                // TODO: Remove suffix n async & await context only.
+                // TODO: Remove suffix in async & await context only.
                 if let Some(new_ident) = ident_try_remove_suffix(&expr.method, "_async") {
                     expr.method = new_ident;
                 }
