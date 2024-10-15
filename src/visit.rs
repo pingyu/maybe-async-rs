@@ -233,7 +233,7 @@ impl VisitMut for AsyncIdentAdder {
                 }
 
                 Expr::Call(call_expr) => {
-                    if let Expr::Path(path_expr) = &*call_expr.func {
+                    if let Expr::Path(path_expr) = call_expr.func.as_ref() {
                         let last_seg = path_expr.path.segments.last().unwrap();
                         if !last_seg.ident.to_string().ends_with("_async") {
                             let mut call_expr = call_expr.clone();
@@ -247,6 +247,20 @@ impl VisitMut for AsyncIdentAdder {
                             expr.base = Box::new(Expr::Call(call_expr));
                         }
                     }
+                }
+
+                // To convert `next!(iter).await` to `next_async!(iter)`.
+                Expr::Macro(macro_expr) => {
+                    let last_seg = macro_expr.mac.path.segments.last().unwrap();
+                    if !last_seg.ident.to_string().ends_with("_async") {
+                        let mut macro_expr = macro_expr.clone();
+                        let last_seg = macro_expr.mac.path.segments.last_mut().unwrap();
+                        last_seg.ident = ident_add_suffix(&last_seg.ident, "_async");
+                        expr.base = Box::new(Expr::Macro(macro_expr));
+                    }
+
+                    // Remove the await.
+                    *node = (*expr.base).clone();
                 }
 
                 _ => {}
