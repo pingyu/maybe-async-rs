@@ -1,5 +1,6 @@
 use std::iter::FromIterator;
 
+use crate::{ident_add_suffix, ident_try_remove_suffix};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
@@ -128,6 +129,14 @@ impl VisitMut for AsyncAwaitRemoval {
                 };
                 *node = sync_expr;
             }
+
+            Expr::MethodCall(expr) => {
+                // TODO: Remove suffix in async & await context only.
+                if let Some(new_ident) = ident_try_remove_suffix(&expr.method, "_async") {
+                    expr.method = new_ident;
+                }
+            }
+
             _ => {}
         }
     }
@@ -196,4 +205,68 @@ fn search_trait_bound(
         }
     }
     inputs
+}
+
+pub struct AsyncIdentAdder;
+
+impl AsyncIdentAdder {
+    pub fn add_async_ident(&mut self, item: TokenStream) -> TokenStream {
+        let mut syntax_tree: File = syn::parse(item.into()).unwrap();
+        self.visit_file_mut(&mut syntax_tree);
+        quote!(#syntax_tree)
+    }
+}
+
+impl VisitMut for AsyncIdentAdder {
+    fn visit_expr_mut(&mut self, node: &mut Expr) {
+        // Delegate to the default impl to visit nested expressions.
+        visit_mut::visit_expr_mut(self, node);
+
+        match node {
+            Expr::Await(expr) => match expr.base.as_ref() {
+                Expr::MethodCall(base_expr) => {
+                    if !base_expr.method.to_string().ends_with("_async") {
+                        let mut base_expr = base_expr.clone();
+                        base_expr.method = ident_add_suffix(&base_expr.method, "_async");
+                        expr.base = Box::new(Expr::MethodCall(base_expr));
+                    }
+                }
+
+                Expr::Call(call_expr) => {
+                    if let Expr::Path(path_expr) = call_expr.func.as_ref() {
+                        let last_seg = path_expr.path.segments.last().unwrap();
+                        if !last_seg.ident.to_string().ends_with("_async") {
+                            let mut call_expr = call_expr.clone();
+                            let mut func_expr = call_expr.func.as_ref().clone();
+                            let Expr::Path(path_expr) = &mut func_expr else {
+                                unreachable!()
+                            };
+                            path_expr.path.segments.last_mut().unwrap().ident =
+                                ident_add_suffix(&last_seg.ident, "_async");
+                            call_expr.func = Box::new(func_expr);
+                            expr.base = Box::new(Expr::Call(call_expr));
+                        }
+                    }
+                }
+
+                // To convert `next!(iter).await` to `next_async!(iter)`.
+                Expr::Macro(macro_expr) => {
+                    let last_seg = macro_expr.mac.path.segments.last().unwrap();
+                    if !last_seg.ident.to_string().ends_with("_async") {
+                        let mut macro_expr = macro_expr.clone();
+                        let last_seg = macro_expr.mac.path.segments.last_mut().unwrap();
+                        last_seg.ident = ident_add_suffix(&last_seg.ident, "_async");
+                        expr.base = Box::new(Expr::Macro(macro_expr));
+                    }
+
+                    // Remove the await.
+                    *node = (*expr.base).clone();
+                }
+
+                _ => {}
+            },
+
+            _ => {}
+        }
+    }
 }

@@ -281,13 +281,15 @@ use proc_macro::TokenStream;
 
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use syn::{
-    parse_macro_input, spanned::Spanned, AttributeArgs, Ident, ImplItem, ItemImpl, Lit, Meta,
-    NestedMeta, Path, TraitItem, Type, TypePath,
+    parse_macro_input, parse_quote, spanned::Spanned, AttributeArgs, Ident, ImplItem, ItemImpl,
+    Lit, Meta, NestedMeta, Path, TraitItem, Type, TypePath,
 };
 
+use crate::{
+    parse::Item,
+    visit::{AsyncAwaitRemoval, AsyncIdentAdder},
+};
 use quote::quote;
-
-use crate::{parse::Item, visit::AsyncAwaitRemoval};
 
 mod parse;
 mod visit;
@@ -297,7 +299,15 @@ fn ident_add_suffix(ident: &Ident, suffix: &str) -> Ident {
     Ident::new(&format!("{}{}", ident, suffix), ident.span())
 }
 
+fn ident_try_remove_suffix(ident: &Ident, suffix: &str) -> Option<Ident> {
+    let ident_str = ident.to_string();
+    ident_str
+        .ends_with(suffix)
+        .then(|| Ident::new(&ident_str[..ident_str.len() - suffix.len()], ident.span()))
+}
+
 // Appends a suffix to the last segment in the impl's path
+#[allow(dead_code)]
 fn impl_add_suffix(input: &mut ItemImpl, suffix: &str) {
     if let Type::Path(TypePath {
         path: Path { segments, .. },
@@ -317,16 +327,36 @@ fn impl_add_suffix(input: &mut ItemImpl, suffix: &str) {
     // }
 }
 
-fn convert_async(mut input: Item, send: bool) -> TokenStream2 {
+fn convert_async(mut input: Item, send: bool, recursion: bool) -> TokenStream2 {
     let prefix = match (send, &input) {
         (true, Item::Impl(_) | Item::Trait(_)) => quote!(#[async_trait::async_trait]),
         (false, Item::Impl(_) | Item::Trait(_)) => quote!(#[async_trait::async_trait(?Send)]),
         _ => quote!(),
     };
 
+    let prefix_recursion = if recursion {
+        quote!(#[async_recursion::async_recursion])
+    } else {
+        quote!()
+    };
+
     match &mut input {
         Item::Impl(item) => {
-            impl_add_suffix(item, "Async");
+            for inner in &mut item.items {
+                if let ImplItem::Method(ref mut method) = inner {
+                    if let Some(pos) = method
+                        .attrs
+                        .iter()
+                        .position(|attr| attr.path.is_ident("maybe_async"))
+                    {
+                        method.attrs.remove(pos);
+                        method.sig.ident = ident_add_suffix(&method.sig.ident, "_async");
+                        let expanded = AsyncIdentAdder.add_async_ident(quote!(#method));
+                        *method = parse_quote! { #prefix_recursion #expanded };
+                    }
+                }
+            }
+
             if item.trait_.is_none() {
                 quote!(#item)
             } else {
@@ -334,20 +364,17 @@ fn convert_async(mut input: Item, send: bool) -> TokenStream2 {
             }
         }
         Item::Struct(item) => {
-            item.ident = ident_add_suffix(&item.ident, "Async");
             quote!(#item)
         }
         Item::Enum(item) => {
-            item.ident = ident_add_suffix(&item.ident, "Async");
             quote!(#item)
         }
         Item::Trait(item) => {
-            item.ident = ident_add_suffix(&item.ident, "Async");
             quote!(#prefix #item)
         }
         Item::Fn(item) => {
             item.sig.ident = ident_add_suffix(&item.sig.ident, "_async");
-            quote!(#item)
+            AsyncIdentAdder.add_async_ident(quote!(#prefix_recursion #item))
         }
     }
     .into()
@@ -356,11 +383,25 @@ fn convert_async(mut input: Item, send: bool) -> TokenStream2 {
 fn convert_sync(mut input: Item) -> TokenStream2 {
     match &mut input {
         Item::Impl(item) => {
-            impl_add_suffix(item, "Sync");
             for inner in &mut item.items {
                 if let ImplItem::Method(ref mut method) = inner {
-                    if method.sig.asyncness.is_some() {
-                        method.sig.asyncness = None;
+                    if let Some(pos) = method
+                        .attrs
+                        .iter()
+                        .position(|attr| attr.path.is_ident("maybe_async"))
+                    {
+                        method.attrs.remove(pos);
+
+                        if let Some(new_ident) =
+                            ident_try_remove_suffix(&method.sig.ident, "_async")
+                        {
+                            method.sig.ident = new_ident;
+                        }
+                        if method.sig.asyncness.is_some() {
+                            method.sig.asyncness = None;
+                        }
+                        let expanded = AsyncAwaitRemoval.remove_async_await(quote!(#method));
+                        *method = parse_quote! { #expanded };
                     }
                 }
             }
@@ -386,7 +427,9 @@ fn convert_sync(mut input: Item) -> TokenStream2 {
             AsyncAwaitRemoval.remove_async_await(quote!(#item))
         }
         Item::Fn(item) => {
-            item.sig.ident = ident_add_suffix(&item.sig.ident, "_sync");
+            if let Some(new_ident) = ident_try_remove_suffix(&item.sig.ident, "_async") {
+                item.sig.ident = new_ident;
+            }
             if item.sig.asyncness.is_some() {
                 item.sig.asyncness = None;
             }
@@ -396,11 +439,198 @@ fn convert_sync(mut input: Item) -> TokenStream2 {
     .into()
 }
 
+fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
+    let prefix = match (send, &input) {
+        (true, Item::Impl(_) | Item::Trait(_)) => quote!(#[async_trait::async_trait]),
+        (false, Item::Impl(_) | Item::Trait(_)) => quote!(#[async_trait::async_trait(?Send)]),
+        _ => quote!(),
+    };
+
+    match &mut input {
+        Item::Impl(item) => {
+            let mut expanded_items = Vec::with_capacity(item.items.len());
+            for inner in item.items.drain(..) {
+                if let ImplItem::Method(mut method) = inner {
+                    if let Some(pos) = method.attrs.iter().position(|attr| {
+                        attr.path.is_ident("maybe_async")
+                            || attr.path.is_ident("maybe_async_recursion")
+                    }) {
+                        let is_recursion = method
+                            .attrs
+                            .remove(pos)
+                            .path
+                            .is_ident("maybe_async_recursion");
+                        let prefix_recursion = if is_recursion {
+                            quote!(#[async_recursion::async_recursion])
+                        } else {
+                            quote!()
+                        };
+
+                        if cfg!(feature = "is_async") {
+                            let mut method = method.clone();
+                            method.sig.ident = ident_add_suffix(&method.sig.ident, "_async");
+                            let expanded = AsyncIdentAdder.add_async_ident(quote!(#method));
+                            let method = parse_quote! { #prefix_recursion #expanded };
+                            expanded_items.push(ImplItem::Method(method));
+                        }
+
+                        if cfg!(feature = "is_sync") {
+                            if let Some(new_ident) =
+                                ident_try_remove_suffix(&method.sig.ident, "_async")
+                            {
+                                method.sig.ident = new_ident;
+                            }
+                            if method.sig.asyncness.is_some() {
+                                method.sig.asyncness = None;
+                            }
+                            let expanded = AsyncAwaitRemoval.remove_async_await(quote!(#method));
+                            let method = parse_quote! { #expanded };
+                            expanded_items.push(ImplItem::Method(method));
+                        }
+                    } else {
+                        expanded_items.push(ImplItem::Method(method));
+                    }
+                } else {
+                    expanded_items.push(inner);
+                }
+            }
+
+            item.items = expanded_items;
+
+            if item.trait_.is_none() {
+                quote!(#item)
+            } else {
+                quote!(#prefix #item)
+            }
+        }
+
+        Item::Trait(item) => {
+            let mut expanded_items = Vec::with_capacity(item.items.len());
+            for inner in item.items.drain(..) {
+                if let TraitItem::Method(mut method) = inner {
+                    if let Some(pos) = method
+                        .attrs
+                        .iter()
+                        .position(|attr| attr.path.is_ident("maybe_async"))
+                    {
+                        method.attrs.remove(pos);
+
+                        if cfg!(feature = "is_async") {
+                            let mut method = method.clone();
+
+                            method.sig.ident = ident_add_suffix(&method.sig.ident, "_async");
+
+                            let is_sync = method.sig.asyncness.is_none();
+                            if is_sync {
+                                method.sig.asyncness = Some(Default::default());
+                            }
+
+                            let method = if method.default.is_some() {
+                                let expanded = AsyncIdentAdder.add_async_ident(quote!(#method));
+                                parse_quote! { #expanded }
+                            } else if is_sync {
+                                // TODO: generate default implementation as invoke the sync version.
+                                method.default = Some(parse_quote!({
+                                    unimplemented!();
+                                }));
+                                method.attrs.push(parse_quote!(#[allow(unused)]));
+                                method
+                                    .attrs
+                                    .push(parse_quote!(#[allow(clippy::diverging_sub_expression)]));
+                                method
+                            } else {
+                                method
+                            };
+
+                            expanded_items.push(TraitItem::Method(method));
+                        }
+
+                        if cfg!(feature = "is_sync") {
+                            if let Some(new_ident) =
+                                ident_try_remove_suffix(&method.sig.ident, "_async")
+                            {
+                                method.sig.ident = new_ident;
+                            }
+
+                            if method.sig.asyncness.is_some() {
+                                method.sig.asyncness = None;
+                            }
+
+                            let method = if method.default.is_some() {
+                                let expanded =
+                                    AsyncAwaitRemoval.remove_async_await(quote!(#method));
+                                parse_quote! { #expanded }
+                            } else {
+                                method
+                            };
+
+                            expanded_items.push(TraitItem::Method(method));
+                        }
+                    } else {
+                        expanded_items.push(TraitItem::Method(method));
+                    }
+                } else {
+                    expanded_items.push(inner);
+                }
+            }
+
+            item.items = expanded_items;
+
+            quote!(#prefix #item)
+        }
+
+        _ => syn::Error::new(Span::call_site(), "Only accepts trait or trait impl")
+            .to_compile_error()
+            .into(),
+    }
+}
+
 /// `maybe_async::both` attribute macro
 ///
 /// Can be applied to traits, trait impls, structs, struct impls and functions.
 #[proc_macro_attribute]
 pub fn both(args: TokenStream, input: TokenStream) -> TokenStream {
+    let mut send = None;
+    let mut recursion = false;
+    for arg in args.to_string().replace(" ", "").split(',') {
+        match arg {
+            "Send" => send = Some(true),
+            "?Send" => send = Some(false),
+            "Recursion" => recursion = true,
+            "" => {}
+            _ => {
+                return syn::Error::new(
+                    Span::call_site(),
+                    "Only accepts `Send`, `?Send`, or `Recursion`",
+                )
+                .to_compile_error()
+                .into();
+            }
+        }
+    }
+    let send = send.unwrap_or(true);
+
+    let item = parse_macro_input!(input as Item);
+
+    let mut token = TokenStream2::new();
+
+    if cfg!(all(feature = "is_sync", feature = "is_async")) {
+        // We need a `clone` if both are enabled
+        token.extend(convert_sync(item.clone()));
+        token.extend(convert_async(item, send, recursion));
+    } else if cfg!(feature = "is_sync") {
+        token.extend(convert_sync(item));
+    } else if cfg!(feature = "is_async") {
+        token.extend(convert_async(item, send, recursion));
+    }
+    token.into()
+}
+
+/// `maybe_async::async_trait` attribute macro
+///
+/// Can be applied to traits, trait impls.
+#[proc_macro_attribute]
+pub fn async_trait(args: TokenStream, input: TokenStream) -> TokenStream {
     let send = match args.to_string().replace(" ", "").as_str() {
         "" | "Send" => true,
         "?Send" => false,
@@ -412,19 +642,7 @@ pub fn both(args: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     let item = parse_macro_input!(input as Item);
-
-    let mut token = TokenStream2::new();
-
-    if cfg!(all(feature = "is_sync", feature = "is_async")) {
-        // We need a `clone` if both are enabled
-        token.extend(convert_sync(item.clone()));
-        token.extend(convert_async(item, send));
-    } else if cfg!(feature = "is_sync") {
-        token.extend(convert_sync(item));
-    } else if cfg!(feature = "is_async") {
-        token.extend(convert_async(item, send));
-    }
-    token.into()
+    convert_trait(item, send).into()
 }
 
 /// convert marked async code to async code with `async-trait`
@@ -440,7 +658,7 @@ pub fn must_be_async(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     };
     let item = parse_macro_input!(input as Item);
-    convert_async(item, send).into()
+    convert_async(item, send, false).into()
 }
 
 /// convert marked async code to sync code
@@ -484,7 +702,7 @@ pub fn async_impl(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let token = if cfg!(feature = "is_async") {
         let item = parse_macro_input!(input as Item);
-        convert_async(item, send)
+        convert_async(item, send, false)
     } else {
         quote!()
     };
