@@ -1,11 +1,21 @@
 //!
 //! # Maybe-Async Procedure Macro
 //!
+//! THANKS to the great projects of https://github.com/fMeow/maybe-async-rs and https://github.com/marioortizmanero/maybe-async-rs.
+//!
 //! **Why bother writing similar code twice for blocking and async code?**
 //!
 //! [![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 //!
-//! THANKS to the great projects of https://github.com/fMeow/maybe-async-rs and https://github.com/marioortizmanero/maybe-async-rs.
+//! When implementing both sync and async versions of API in a crate, most API
+//! of the two version are almost the same except for some async/await keyword.
+//!
+//! `maybe-async` help unifying async and sync implementation by **procedural
+//! macro**.
+//! - Write async code with normal `async`, `await`, and let `maybe_async`
+//!   handles those `async` and `await` when you need a blocking code.
+//! - Switch between sync and async by toggling `is_sync` feature gate in
+//!   `Cargo.toml`.
 //!
 //! # License
 //! MIT
@@ -142,7 +152,6 @@ fn convert_async(mut input: Item, send: bool, recursion: bool) -> TokenStream2 {
             AsyncIdentAdder.add_async_ident(quote!(#prefix_recursion #item))
         }
     }
-    .into()
 }
 
 /// Generate Sync Codes.
@@ -249,7 +258,6 @@ fn convert_sync(mut input: Item) -> TokenStream2 {
             AsyncAwaitRemoval.remove_async_await(quote!(#item))
         }
     }
-    .into()
 }
 
 /// Generate Sync & Async Codes for trait and trait impls.
@@ -465,8 +473,7 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
         }
 
         _ => syn::Error::new(Span::call_site(), "Only accepts trait or trait impl")
-            .to_compile_error()
-            .into(),
+            .to_compile_error(),
     }
 }
 
@@ -528,70 +535,6 @@ pub fn async_trait(args: TokenStream, input: TokenStream) -> TokenStream {
 
     let item = parse_macro_input!(input as Item);
     convert_trait(item, send).into()
-}
-
-/// convert marked async code to async code with `async-trait`
-#[proc_macro_attribute]
-pub fn must_be_async(args: TokenStream, input: TokenStream) -> TokenStream {
-    let send = match args.to_string().replace(" ", "").as_str() {
-        "" | "Send" => true,
-        "?Send" => false,
-        _ => {
-            return syn::Error::new(Span::call_site(), "Only accepts `Send` or `?Send`")
-                .to_compile_error()
-                .into();
-        }
-    };
-    let item = parse_macro_input!(input as Item);
-    convert_async(item, send, false).into()
-}
-
-/// convert marked async code to sync code
-#[proc_macro_attribute]
-pub fn must_be_sync(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let item = parse_macro_input!(input as Item);
-    convert_sync(item).into()
-}
-
-/// mark sync implementation
-///
-/// only compiled when `is_sync` feature gate is set.
-/// When `is_sync` is not set, marked code is removed.
-#[proc_macro_attribute]
-pub fn sync_impl(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let token = if cfg!(feature = "is_sync") {
-        let item = parse_macro_input!(input as Item);
-        let input = convert_sync(item);
-        quote!(#input)
-    } else {
-        quote!()
-    };
-    token.into()
-}
-
-/// mark async implementation
-///
-/// only compiled when `is_sync` feature gate is not set.
-/// When `is_sync` is set, marked code is removed.
-#[proc_macro_attribute]
-pub fn async_impl(args: TokenStream, input: TokenStream) -> TokenStream {
-    let send = match args.to_string().replace(" ", "").as_str() {
-        "" | "Send" => true,
-        "?Send" => false,
-        _ => {
-            return syn::Error::new(Span::call_site(), "Only accepts `Send` or `?Send`")
-                .to_compile_error()
-                .into();
-        }
-    };
-
-    let token = if cfg!(feature = "is_async") {
-        let item = parse_macro_input!(input as Item);
-        convert_async(item, send, false)
-    } else {
-        quote!()
-    };
-    token.into()
 }
 
 macro_rules! match_nested_meta_to_str_lit {
@@ -692,7 +635,7 @@ macro_rules! match_nested_meta_to_str_lit {
 pub fn test(args: TokenStream, input: TokenStream) -> TokenStream {
     let attr_args = parse_macro_input!(args as AttributeArgs);
     let input = TokenStream2::from(input);
-    if attr_args.len() < 1 {
+    if attr_args.is_empty() {
         return syn::Error::new(
             Span::call_site(),
             "Arguments cannot be empty, at least specify the condition for sync code",

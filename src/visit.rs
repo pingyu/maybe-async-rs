@@ -52,7 +52,7 @@ impl<'a> VisitMut for ReplaceGenericType<'a> {
                 })
                 .collect::<Vec<_>>();
             item_fn.sig.generics.params =
-                Punctuated::from_iter(args.into_iter().map(|p| p.clone()).collect::<Vec<_>>());
+                Punctuated::from_iter(args.into_iter().cloned().collect::<Vec<_>>());
 
             // remove generic type from where clause
             if let Some(where_clause) = &mut item_fn.sig.generics.where_clause {
@@ -77,10 +77,7 @@ impl<'a> VisitMut for ReplaceGenericType<'a> {
                     .collect::<Vec<_>>();
 
                 where_clause.predicates = Punctuated::from_iter(
-                    new_where_clause
-                        .into_iter()
-                        .map(|c| c.clone())
-                        .collect::<Vec<_>>(),
+                    new_where_clause.into_iter().cloned().collect::<Vec<_>>(),
                 );
             };
         }
@@ -117,7 +114,7 @@ impl VisitMut for AsyncAwaitRemoval {
                 let inner = &expr.block;
                 let sync_expr = if inner.stmts.len() == 1 {
                     // remove useless braces when there is only one statement
-                    let stmt = &inner.stmts.get(0).unwrap();
+                    let stmt = inner.stmts.first().unwrap();
                     // convert statement to Expr
                     parse_quote!(#stmt)
                 } else {
@@ -222,8 +219,8 @@ impl VisitMut for AsyncIdentAdder {
         // Delegate to the default impl to visit nested expressions.
         visit_mut::visit_expr_mut(self, node);
 
-        match node {
-            Expr::Await(expr) => match expr.base.as_ref() {
+        if let Expr::Await(expr) = node {
+            match expr.base.as_ref() {
                 Expr::MethodCall(base_expr) => {
                     if !base_expr.method.to_string().ends_with("_async") {
                         let mut base_expr = base_expr.clone();
@@ -264,9 +261,7 @@ impl VisitMut for AsyncIdentAdder {
                 }
 
                 _ => {}
-            },
-
-            _ => {}
+            }
         }
     }
 }
