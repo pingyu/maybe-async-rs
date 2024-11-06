@@ -1,7 +1,7 @@
 //!
 //! # Maybe-Async Procedure Macro
 //!
-//! THANKS to the great projects of https://github.com/fMeow/maybe-async-rs and https://github.com/marioortizmanero/maybe-async-rs.
+//! THANKS to the great projects of <https://github.com/fMeow/maybe-async-rs> and <https://github.com/marioortizmanero/maybe-async-rs>.
 //!
 //! **Why bother writing similar code twice for blocking and async code?**
 //!
@@ -60,8 +60,9 @@ fn ident_try_remove_suffix(ident: &Ident, suffix: &str) -> Option<Ident> {
 ///
 /// impl Foo {
 ///     #[maybe_async::both]
-///     async fn fn1(&self) {
+///     async fn fn1(&self) -> bool {
 ///         self.fn2().await;
+///         false
 ///     }
 ///     #[maybe_async::both]
 ///     async fn fn2(&self) {}
@@ -70,10 +71,11 @@ fn ident_try_remove_suffix(ident: &Ident, suffix: &str) -> Option<Ident> {
 /// #[maybe_async::both(Recursion)]
 /// pub async fn fn3() {
 ///     let foo = Foo {};
-///     foo.fn1().await;
-///
+///     let ok = foo.fn1().await;
 ///     //...
-///     fn3().await;
+///     if ok {
+///         fn3().await;
+///     }
 ///     //...
 /// }
 /// ```
@@ -84,8 +86,9 @@ fn ident_try_remove_suffix(ident: &Ident, suffix: &str) -> Option<Ident> {
 /// struct Foo {}
 ///
 /// impl Foo {
-///     async fn fn1_async(&self) {
+///     async fn fn1_async(&self) -> bool {
 ///         self.fn2_async().await;
+///         false
 ///     }
 ///     async fn fn2_async(&self) {}
 /// }
@@ -93,10 +96,11 @@ fn ident_try_remove_suffix(ident: &Ident, suffix: &str) -> Option<Ident> {
 /// #[async_recursion::async_recursion]
 /// pub async fn fn3_async() {
 ///     let foo = Foo {};
-///     foo.fn1_async().await;
-///
+///     let ok = foo.fn1_async().await;
 ///     //...
-///     fn3_async().await;
+///     if ok {
+///         fn3_async().await;
+///     }
 ///     //...
 /// }
 /// ```
@@ -163,8 +167,9 @@ fn convert_async(mut input: Item, send: bool, recursion: bool) -> TokenStream2 {
 ///
 /// impl Foo {
 ///     #[maybe_async::both]
-///     async fn fn1(&self) {
+///     async fn fn1(&self) -> bool {
 ///         self.fn2().await;
+///         false
 ///     }
 ///     #[maybe_async::both]
 ///     async fn fn2(&self) {}
@@ -173,10 +178,11 @@ fn convert_async(mut input: Item, send: bool, recursion: bool) -> TokenStream2 {
 /// #[maybe_async::both(Recursion)]
 /// pub async fn fn3() {
 ///     let foo = Foo {};
-///     foo.fn1().await;
-///
+///     let ok = foo.fn1().await;
 ///     //...
-///     fn3().await;
+///     if ok {
+///         fn3().await;
+///     }
 ///     //...
 /// }
 /// ```
@@ -187,17 +193,20 @@ fn convert_async(mut input: Item, send: bool, recursion: bool) -> TokenStream2 {
 /// struct Foo {}
 ///
 /// impl Foo {
-///     fn fn1(&self) {
+///     fn fn1(&self) -> bool {
 ///         self.fn2();
+///         false
 ///     }
 ///     fn fn2(&self) {}
 /// }
 ///
 /// pub fn fn3() {
-///     foo.fn1();
-///
+///     let foo = Foo {};
+///     let ok = foo.fn1();
 ///     //...
-///     fn3();
+///     if ok {
+///         fn3();
+///     }
 ///     //...
 /// }
 /// ```
@@ -271,9 +280,9 @@ fn convert_sync(mut input: Item) -> TokenStream2 {
 ///     async fn fn1(&self);
 ///     #[maybe_async]
 ///     async fn fn2(&self);
-///     #[maybe_async]
-///     async fn fn3(&self);
 /// }
+///
+/// struct Foo {}
 ///
 /// #[maybe_async::async_trait]
 /// impl A for Foo {
@@ -284,13 +293,6 @@ fn convert_sync(mut input: Item) -> TokenStream2 {
 ///
 ///     #[maybe_async]
 ///     async fn fn2(&self) {}
-///
-///     #[maybe_async_recursion]
-///     async fn fn3(&self) {
-///         //...
-///         self.fn3().await;
-///         //...
-///     }
 /// }
 /// ```
 ///
@@ -303,9 +305,9 @@ fn convert_sync(mut input: Item) -> TokenStream2 {
 ///     async fn fn1_async(&self);
 ///     fn fn2(&self);
 ///     async fn fn2_async(&self);
-///     fn fn3(&self);
-///     async fn fn3_async(&self);
 /// }
+///
+/// struct Foo {}
 ///
 /// #[async_trait::async_trait]
 /// impl A for Foo {
@@ -318,18 +320,6 @@ fn convert_sync(mut input: Item) -> TokenStream2 {
 ///
 ///     fn fn2(&self) {}
 ///     async fn fn2_async(&self) {}
-///
-///     fn fn3(&self) {
-///         //...
-///         self.fn3();
-///         //...
-///     }
-///     #[async_recursion::async_recursion]
-///     async fn fn3_async(&self) {
-///         //...
-///         self.fn3_async().await;
-///         //...
-///     }
 /// }
 /// ```
 fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
@@ -344,26 +334,18 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
             let mut expanded_items = Vec::with_capacity(item.items.len());
             for inner in item.items.drain(..) {
                 if let ImplItem::Method(mut method) = inner {
-                    if let Some(pos) = method.attrs.iter().position(|attr| {
-                        attr.path.is_ident("maybe_async")
-                            || attr.path.is_ident("maybe_async_recursion")
-                    }) {
-                        let is_recursion = method
-                            .attrs
-                            .remove(pos)
-                            .path
-                            .is_ident("maybe_async_recursion");
-                        let prefix_recursion = if is_recursion {
-                            quote!(#[async_recursion::async_recursion])
-                        } else {
-                            quote!()
-                        };
+                    if let Some(pos) = method
+                        .attrs
+                        .iter()
+                        .position(|attr| attr.path.is_ident("maybe_async"))
+                    {
+                        method.attrs.remove(pos);
 
                         if cfg!(feature = "is_async") {
                             let mut method = method.clone();
                             method.sig.ident = ident_add_suffix(&method.sig.ident, "_async");
                             let expanded = AsyncIdentAdder.add_async_ident(quote!(#method));
-                            let method = parse_quote! { #prefix_recursion #expanded };
+                            let method = parse_quote! { #expanded };
                             expanded_items.push(ImplItem::Method(method));
                         }
 
@@ -537,6 +519,33 @@ pub fn async_trait(args: TokenStream, input: TokenStream) -> TokenStream {
     convert_trait(item, send).into()
 }
 
+/// Convert marked *async* codes to async.
+/// 
+/// Currently only used for testing.
+#[proc_macro_attribute]
+pub fn must_be_async(args: TokenStream, input: TokenStream) -> TokenStream {
+    let send = match args.to_string().replace(" ", "").as_str() {
+        "" | "Send" => true,
+        "?Send" => false,
+        _ => {
+            return syn::Error::new(Span::call_site(), "Only accepts `Send` or `?Send`")
+                .to_compile_error()
+                .into();
+        }
+    };
+    let item = parse_macro_input!(input as Item);
+    convert_async(item, send, false).into()
+}
+
+/// Convert marked *async* codes to sync.
+/// 
+/// Currently only used for testing.
+#[proc_macro_attribute]
+pub fn must_be_sync(_args: TokenStream, input: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(input as Item);
+    convert_sync(item).into()
+}
+
 macro_rules! match_nested_meta_to_str_lit {
     ($t:expr) => {
         match $t {
@@ -572,7 +581,7 @@ macro_rules! match_nested_meta_to_str_lit {
 /// - Examples
 ///
 /// ```rust
-/// #[maybe_async::maybe_async]
+/// #[maybe_async::both]
 /// async fn async_fn() -> bool {
 ///     true
 /// }
@@ -581,12 +590,12 @@ macro_rules! match_nested_meta_to_str_lit {
 ///     // when to treat the test code as sync version
 ///     feature="is_sync",
 ///     // when to run async test
-///     async(all(not(feature="is_sync"), feature="async_std"), async_std::test),
+///     async(all(feature="is_async", feature="async_std"), async_std::test),
 ///     // you can specify multiple conditions for different async runtime
-///     async(all(not(feature="is_sync"), feature="tokio"), tokio::test)
+///     async(all(feature="is_async", feature="tokio"), tokio::test)
 /// )]
 /// async fn test_async_fn() {
-///     let res = async_fn().await;
+///     let res = async_fn_async().await;
 ///     assert_eq!(res, true);
 /// }
 ///
@@ -601,25 +610,25 @@ macro_rules! match_nested_meta_to_str_lit {
 /// The above code is transcripted to the following code:
 ///
 /// ```rust
-/// # use maybe_async::{must_be_async, must_be_sync, sync_impl};
-/// # #[maybe_async::maybe_async]
+/// # use maybe_async::{must_be_async, must_be_sync};
+/// # #[maybe_async::both]
 /// # async fn async_fn() -> bool { true }
 ///
 /// // convert to sync version when sync condition is met, keep in async version when corresponding
 /// // condition is met
 /// #[cfg_attr(feature = "is_sync", must_be_sync, test)]
 /// #[cfg_attr(
-///     all(not(feature = "is_sync"), feature = "async_std"),
+///     all(feature = "is_async", feature = "async_std"),
 ///     must_be_async,
 ///     async_std::test
 /// )]
 /// #[cfg_attr(
-///     all(not(feature = "is_sync"), feature = "tokio"),
+///     all(feature = "is_async", feature = "tokio"),
 ///     must_be_async,
 ///     tokio::test
 /// )]
 /// async fn test_async_fn() {
-///     let res = async_fn().await;
+///     let res = async_fn_async().await;
 ///     assert_eq!(res, true);
 /// }
 ///
