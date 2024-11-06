@@ -1,13 +1,12 @@
 [package]
 name = "maybe-async"
 version = "0.2.6"
-authors = [ "Guoli Lyu <guoli-lv@hotmail.com>" ]
+authors = [ "Ping Yu <yuping@pingcap.com>" ]
 edition = "2018"
 readme = "README.md"
 license = "MIT"
 description = "A procedure macro to unify SYNC and ASYNC implementation"
-repository = "https://github.com/fMeow/maybe-async-rs"
-documentation = "https://docs.rs/maybe-async"
+repository = "https://github.com/pingyu/maybe-async-rs"
 keywords = [ "maybe", "async", "futures", "macros", "proc_macro" ]
 
 [dependencies]
@@ -26,6 +25,7 @@ status = "actively-developed"
 
 [dev-dependencies]
 async-trait = "0.1"
+async-recursion = "1.1"
 
   [dev-dependencies.trybuild]
   version = "1"
@@ -43,3 +43,5 @@ async-trait = "0.1"
 default = [ ]
 is_sync = [ ]
 is_async = [ ]
+tokio = []
+async_std = []

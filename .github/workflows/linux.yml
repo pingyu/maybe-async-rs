@@ -1,6 +1,11 @@
 name: CI (Linux)
 
-on: [push, pull_request]
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - cse
 
 jobs:
   build_and_test:
@@ -20,14 +25,14 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: check
-          args: --all --bins --examples --tests
+          args: --features=is_async --all --bins --examples --tests
 
       - name: tests (async)
         uses: actions-rs/cargo@v1
         timeout-minutes: 40
         with:
           command: test
-          args: --all --no-fail-fast -- --nocapture
+          args: --features=is_async --all --no-fail-fast -- --nocapture
 
       - name: check build (is_sync)
         uses: actions-rs/cargo@v1
@@ -53,7 +58,7 @@ jobs:
           RUSTDOCFLAGS: -Dwarnings
         with:
           command: doc
-          args: --all --no-deps
+          args: --features=is_async --all --no-deps
 
       - name: doc (is_sync)
         uses: actions-rs/cargo@v1
@@ -61,7 +66,7 @@ jobs:
           RUSTDOCFLAGS: -Dwarnings
         with:
           command: doc
-          args: --all --no-deps --features=is_sync
+          args: --features=is_sync --all --no-deps
 
   publish:
     name: Publish Package
