@@ -520,7 +520,7 @@ pub fn async_trait(args: TokenStream, input: TokenStream) -> TokenStream {
 }
 
 /// Convert marked *async* codes to async.
-/// 
+///
 /// Currently only used for testing.
 #[proc_macro_attribute]
 pub fn must_be_async(args: TokenStream, input: TokenStream) -> TokenStream {
@@ -538,7 +538,7 @@ pub fn must_be_async(args: TokenStream, input: TokenStream) -> TokenStream {
 }
 
 /// Convert marked *async* codes to sync.
-/// 
+///
 /// Currently only used for testing.
 #[proc_macro_attribute]
 pub fn must_be_sync(_args: TokenStream, input: TokenStream) -> TokenStream {
