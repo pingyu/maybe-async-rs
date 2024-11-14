@@ -497,6 +497,25 @@ pub fn both(args: TokenStream, input: TokenStream) -> TokenStream {
     token.into()
 }
 
+/// `maybe_async::async_trait` attribute macro
+///
+/// Can be applied to traits, trait impls.
+#[proc_macro_attribute]
+pub fn async_trait(args: TokenStream, input: TokenStream) -> TokenStream {
+    let send = match args.to_string().replace(" ", "").as_str() {
+        "" | "Send" => true,
+        "?Send" => false,
+        _ => {
+            return syn::Error::new(Span::call_site(), "Only accepts `Send` or `?Send`")
+                .to_compile_error()
+                .into();
+        }
+    };
+
+    let item = parse_macro_input!(input as Item);
+    convert_trait(item, send).into()
+}
+
 /// `maybe_async::test` attribute macro
 ///
 /// Applie to test cases.
@@ -551,23 +570,4 @@ pub fn test(_args: TokenStream, input: TokenStream) -> TokenStream {
         token.extend(convert_async(item, false, false));
     }
     token.into()
-}
-
-/// `maybe_async::async_trait` attribute macro
-///
-/// Can be applied to traits, trait impls.
-#[proc_macro_attribute]
-pub fn async_trait(args: TokenStream, input: TokenStream) -> TokenStream {
-    let send = match args.to_string().replace(" ", "").as_str() {
-        "" | "Send" => true,
-        "?Send" => false,
-        _ => {
-            return syn::Error::new(Span::call_site(), "Only accepts `Send` or `?Send`")
-                .to_compile_error()
-                .into();
-        }
-    };
-
-    let item = parse_macro_input!(input as Item);
-    convert_trait(item, send).into()
 }
