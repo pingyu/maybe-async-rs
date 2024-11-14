@@ -21,52 +21,31 @@ jobs:
           command: fmt
           args: --all -- --check
 
-      - name: check build (async)
+      - name: check build
         uses: actions-rs/cargo@v1
         with:
           command: check
-          args: --features=is_async --all --bins --examples --tests
+          args: --features=is_sync,is_async --all --bins --examples --tests
 
-      - name: tests (async)
+      - name: tests
         uses: actions-rs/cargo@v1
         timeout-minutes: 40
         with:
           command: test
-          args: --features=is_async --all --no-fail-fast -- --nocapture
-
-      - name: check build (is_sync)
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --features=is_sync --all --bins --examples --tests
-
-      - name: tests (is_sync)
-        uses: actions-rs/cargo@v1
-        timeout-minutes: 40
-        with:
-          command: test
-          args: --features=is_sync --all --no-fail-fast -- --nocapture
+          args: --features=is_sync,is_async --all --no-fail-fast -- --nocapture
 
   doc:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
 
-      - name: doc (async)
+      - name: doc
         uses: actions-rs/cargo@v1
         env:
           RUSTDOCFLAGS: -Dwarnings
         with:
           command: doc
-          args: --features=is_async --all --no-deps
-
-      - name: doc (is_sync)
-        uses: actions-rs/cargo@v1
-        env:
-          RUSTDOCFLAGS: -Dwarnings
-        with:
-          command: doc
-          args: --features=is_sync --all --no-deps
+          args: --features=is_sync,is_async --all --no-deps
 
   publish:
     name: Publish Package
