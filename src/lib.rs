@@ -500,6 +500,31 @@ pub fn both(args: TokenStream, input: TokenStream) -> TokenStream {
     token.into()
 }
 
+/// `maybe_async::both` attribute macro
+///
+/// Can be applied to functions and items in impls.
+#[proc_macro_attribute]
+pub fn test_both(_args: TokenStream, input: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(input as Item);
+
+    let mut token = TokenStream2::new();
+
+    if cfg!(all(feature = "is_sync", feature = "is_async")) {
+        // We need a `clone` if both are enabled
+        token.extend(quote!(#[test]));
+        token.extend(convert_sync(item.clone()));
+        token.extend(quote!(#[tokio::test]));
+        token.extend(convert_async(item, false, false));
+    } else if cfg!(feature = "is_sync") {
+        token.extend(quote!(#[test]));
+        token.extend(convert_sync(item));
+    } else if cfg!(feature = "is_async") {
+        token.extend(quote!(#[tokio::test]));
+        token.extend(convert_async(item, false, false));
+    }
+    token.into()
+}
+
 /// `maybe_async::async_trait` attribute macro
 ///
 /// Can be applied to traits, trait impls.
