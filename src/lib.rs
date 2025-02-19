@@ -26,6 +26,7 @@ use proc_macro::TokenStream;
 
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use syn::{parse_macro_input, parse_quote, Ident, ImplItem, TraitItem};
+use util::remove_maybe_async_attr;
 
 use crate::{
     parse::Item,
@@ -34,6 +35,7 @@ use crate::{
 use quote::quote;
 
 mod parse;
+mod util;
 mod visit;
 
 fn ident_add_suffix(ident: &Ident, suffix: &str) -> Ident {
@@ -120,12 +122,7 @@ fn convert_async(mut input: Item, send: bool, recursion: bool) -> TokenStream2 {
             // Use `#[maybe_async::async_trait]` on traits impls instead.
             for inner in &mut item.items {
                 if let ImplItem::Method(ref mut method) = inner {
-                    if let Some(pos) = method
-                        .attrs
-                        .iter()
-                        .position(|attr| attr.path.is_ident("maybe_async"))
-                    {
-                        method.attrs.remove(pos);
+                    if remove_maybe_async_attr(&mut method.attrs) {
                         method.sig.ident = ident_add_suffix(&method.sig.ident, "_async");
                         let expanded = AsyncIdentAdder.add_async_ident(quote!(#method));
                         *method = parse_quote! { #prefix_recursion #expanded };
@@ -214,13 +211,7 @@ fn convert_sync(mut input: Item) -> TokenStream2 {
             // Use `#[maybe_async::async_trait]` on traits impls instead.
             for inner in &mut item.items {
                 if let ImplItem::Method(ref mut method) = inner {
-                    if let Some(pos) = method
-                        .attrs
-                        .iter()
-                        .position(|attr| attr.path.is_ident("maybe_async"))
-                    {
-                        method.attrs.remove(pos);
-
+                    if remove_maybe_async_attr(&mut method.attrs) {
                         if let Some(new_ident) =
                             ident_try_remove_suffix(&method.sig.ident, "_async")
                         {
@@ -331,13 +322,7 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
             let mut expanded_items = Vec::with_capacity(item.items.len());
             for inner in item.items.drain(..) {
                 if let ImplItem::Method(mut method) = inner {
-                    if let Some(pos) = method
-                        .attrs
-                        .iter()
-                        .position(|attr| attr.path.is_ident("maybe_async"))
-                    {
-                        method.attrs.remove(pos);
-
+                    if remove_maybe_async_attr(&mut method.attrs) {
                         if cfg!(feature = "is_async") {
                             let mut method = method.clone();
                             method.sig.ident = ident_add_suffix(&method.sig.ident, "_async");
@@ -380,13 +365,7 @@ fn convert_trait(mut input: Item, send: bool) -> TokenStream2 {
             let mut expanded_items = Vec::with_capacity(item.items.len());
             for inner in item.items.drain(..) {
                 if let TraitItem::Method(mut method) = inner {
-                    if let Some(pos) = method
-                        .attrs
-                        .iter()
-                        .position(|attr| attr.path.is_ident("maybe_async"))
-                    {
-                        method.attrs.remove(pos);
-
+                    if remove_maybe_async_attr(&mut method.attrs) {
                         if cfg!(feature = "is_async") {
                             let mut method = method.clone();
 

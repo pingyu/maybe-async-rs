@@ -1,6 +1,6 @@
 use std::iter::FromIterator;
 
-use crate::{ident_add_suffix, ident_try_remove_suffix};
+use crate::{ident_add_suffix, ident_try_remove_suffix, util::remove_maybe_async_attr};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
@@ -141,13 +141,7 @@ impl VisitMut for AsyncAwaitRemoval {
     fn visit_item_mut(&mut self, i: &mut Item) {
         // find generic parameter of Future and replace it with its Output type
         if let Item::Fn(item_fn) = i {
-            if let Some(pos) = item_fn
-                .attrs
-                .iter()
-                .position(|attr| attr.path.is_ident("maybe_async"))
-            {
-                item_fn.attrs.remove(pos);
-
+            if remove_maybe_async_attr(&mut item_fn.attrs) {
                 if let Some(new_ident) = ident_try_remove_suffix(&item_fn.sig.ident, "_async") {
                     item_fn.sig.ident = new_ident;
                 }
@@ -286,12 +280,7 @@ impl VisitMut for AsyncIdentAdder {
         // Delegate to the default impl to visit nested expressions.
         visit_mut::visit_item_fn_mut(self, item);
 
-        if let Some(pos) = item
-            .attrs
-            .iter()
-            .position(|attr| attr.path.is_ident("maybe_async"))
-        {
-            item.attrs.remove(pos);
+        if remove_maybe_async_attr(&mut item.attrs) {
             if !item.sig.ident.to_string().ends_with("_async") {
                 item.sig.ident = ident_add_suffix(&item.sig.ident, "_async");
             }
