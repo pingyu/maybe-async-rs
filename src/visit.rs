@@ -141,14 +141,22 @@ impl VisitMut for AsyncAwaitRemoval {
     fn visit_item_mut(&mut self, i: &mut Item) {
         // find generic parameter of Future and replace it with its Output type
         if let Item::Fn(item_fn) = i {
-            if let Some(new_ident) = ident_try_remove_suffix(&item_fn.sig.ident, "_async") {
-                item_fn.sig.ident = new_ident;
+            if let Some(pos) = item_fn
+                .attrs
+                .iter()
+                .position(|attr| attr.path.is_ident("maybe_async"))
+            {
+                item_fn.attrs.remove(pos);
+
+                if let Some(new_ident) = ident_try_remove_suffix(&item_fn.sig.ident, "_async") {
+                    item_fn.sig.ident = new_ident;
+                }
+                if item_fn.sig.asyncness.is_some() {
+                    item_fn.sig.asyncness = None;
+                }
+                let expanded = self.remove_async_await(quote!(#item_fn));
+                *item_fn = parse_quote!(#expanded);
             }
-            if item_fn.sig.asyncness.is_some() {
-                item_fn.sig.asyncness = None;
-            }
-            let expanded = self.remove_async_await(quote!(#item_fn));
-            *item_fn = parse_quote!(#expanded);
 
             let mut inputs: Vec<(String, PathSegment)> = vec![];
 
