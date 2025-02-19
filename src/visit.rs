@@ -7,8 +7,8 @@ use syn::{
     parse_quote,
     punctuated::Punctuated,
     visit_mut::{self, visit_item_mut, visit_path_segment_mut, VisitMut},
-    Expr, ExprBlock, File, GenericArgument, GenericParam, Item, PathArguments, PathSegment, Type,
-    TypeParamBound, WherePredicate,
+    Expr, ExprBlock, File, GenericArgument, GenericParam, Item, ItemFn, PathArguments, PathSegment,
+    Type, TypeParamBound, WherePredicate,
 };
 
 pub struct ReplaceGenericType<'a> {
@@ -141,6 +141,15 @@ impl VisitMut for AsyncAwaitRemoval {
     fn visit_item_mut(&mut self, i: &mut Item) {
         // find generic parameter of Future and replace it with its Output type
         if let Item::Fn(item_fn) = i {
+            if let Some(new_ident) = ident_try_remove_suffix(&item_fn.sig.ident, "_async") {
+                item_fn.sig.ident = new_ident;
+            }
+            if item_fn.sig.asyncness.is_some() {
+                item_fn.sig.asyncness = None;
+            }
+            let expanded = self.remove_async_await(quote!(#item_fn));
+            *item_fn = parse_quote!(#expanded);
+
             let mut inputs: Vec<(String, PathSegment)> = vec![];
 
             // generic params: <T:Future<Output=()>, F>
@@ -262,6 +271,27 @@ impl VisitMut for AsyncIdentAdder {
 
                 _ => {}
             }
+        }
+    }
+
+    fn visit_item_fn_mut(&mut self, item: &mut ItemFn) {
+        // Delegate to the default impl to visit nested expressions.
+        visit_mut::visit_item_fn_mut(self, item);
+
+        if let Some(pos) = item
+            .attrs
+            .iter()
+            .position(|attr| attr.path.is_ident("maybe_async"))
+        {
+            item.attrs.remove(pos);
+            if !item.sig.ident.to_string().ends_with("_async") {
+                item.sig.ident = ident_add_suffix(&item.sig.ident, "_async");
+            }
+            if item.sig.asyncness.is_none() {
+                item.sig.asyncness = Some(Default::default());
+            }
+            let expanded = self.add_async_ident(quote!(#item));
+            *item = parse_quote! { #expanded };
         }
     }
 }
